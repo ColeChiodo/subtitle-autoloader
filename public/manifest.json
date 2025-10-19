@@ -1,0 +1,46 @@
+{
+	"manifest_version": 3,
+	"name": "Kuraji - 「クラジ」 Automatic Japanese Subtitle Finder",
+	"version": "0.1",
+	"author": "colechiodo.cc",
+	"description": "Automatically searches for and loads Japanese subtitles for your videos.",
+
+	"icons": {
+		"16": "assets/icons/cc-icon.png",
+		"48": "assets/icons/cc-icon.png",
+		"128": "assets/icons/cc-icon.png"
+	},
+
+	"permissions": [
+		"storage",
+		"activeTab",
+		"scripting"
+	],
+
+	"host_permissions": [
+		"<all_urls>"
+	],
+
+	"background": {
+		"scripts": ["background/background.js"],
+		"type": "module"
+	},
+
+	"content_scripts": [
+		{
+			"matches": ["<all_urls>"],
+			"js": ["content/content.js"]
+		}
+	],
+
+	"web_accessible_resources": [
+		{
+			"resources": ["assets/icons/*"],
+			"matches": ["<all_urls>"]
+		}
+	],
+
+	"action": {
+		"default_popup": "src/popup/popup.html"
+	}
+}
