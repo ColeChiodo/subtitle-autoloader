@@ -70,10 +70,13 @@ async function attachOverlayToVideo(video: HTMLVideoElement) {
     fontSize = settings.fontSize;
     subtitleColor = settings.color;
 
-    const title = document.querySelector('.pageTitle');
-    if (!title) return console.error('No title found');
+    const titleEl = document.querySelector('.pageTitle');
+    if (!titleEl) return console.error('No title found');
 
-    const srtText = (await browser.runtime.sendMessage({ type: 'GET_SUBS', title: title.textContent })) as string;
+    // Request subtitle from background script
+    const result = await browser.runtime.sendMessage({ type: 'GET_SUBS', title: titleEl.textContent });
+    const { text: srtText, fileName: fileName } = result as { text: string; fileName: string | null };
+
     if (!srtText) return console.error('No subtitles found');
 
     const subtitles = parseSRTFile(srtText);
@@ -121,39 +124,44 @@ async function attachOverlayToVideo(video: HTMLVideoElement) {
 
     const buttonsContainer = buttonsContainerList[buttonsContainerList.length - 1];
 
-    createMenu(buttonsContainer, { subs: subsEnabled, offset: subtitleOffset, color: subtitleColor, fontSize }, async (subs, offset, color, fontS) => {
-        let updated = false;
+    // Pass the fileName to createMenu for display
+    createMenu(
+        buttonsContainer,
+        { subs: subsEnabled, offset: subtitleOffset, color: subtitleColor, fontSize, fileName },
+        async (subs, offset, color, fontS) => {
+            let updated = false;
 
-        if (subsEnabled !== subs) {
-            subsEnabled = subs;
-            log.debug(`Subtitles ${subs ? 'enabled' : 'disabled'}`);
-            updated = true;
-        }
-        if (subtitleOffset !== offset) {
-            subtitleOffset = offset;
-            log.debug(`Subtitle offset set to ${subtitleOffset}`);
-            updated = true;
-        }
-        if (subtitleColor !== color) {
-            subtitleColor = color;
-            log.debug(`Subtitle color set to ${subtitleColor}`);
-            updated = true;
-        }
-        if (fontSize !== fontS) {
-            fontSize = fontS;
-            log.debug(`Subtitle font size set to ${fontSize}`);
-            updated = true;
-        }
+            if (subsEnabled !== subs) {
+                subsEnabled = subs;
+                log.debug(`Subtitles ${subs ? 'enabled' : 'disabled'}`);
+                updated = true;
+            }
+            if (subtitleOffset !== offset) {
+                subtitleOffset = offset;
+                log.debug(`Subtitle offset set to ${subtitleOffset}`);
+                updated = true;
+            }
+            if (subtitleColor !== color) {
+                subtitleColor = color;
+                log.debug(`Subtitle color set to ${subtitleColor}`);
+                updated = true;
+            }
+            if (fontSize !== fontS) {
+                fontSize = fontS;
+                log.debug(`Subtitle font size set to ${fontSize}`);
+                updated = true;
+            }
 
-        // Save updated settings
-        if (updated) {
-            await saveSettings({ subsEnabled, offset: subtitleOffset, fontSize, color: subtitleColor });
-        }
+            // Save updated settings
+            if (updated) {
+                await saveSettings({ subsEnabled, offset: subtitleOffset, fontSize, color: subtitleColor });
+            }
 
-        overlay.style.display = subsEnabled ? 'flex' : 'none';
-        span.style.color = subtitleColor;
-        span.style.fontSize = `${fontSize}px`;
-    });
+            overlay.style.display = subsEnabled ? 'flex' : 'none';
+            span.style.color = subtitleColor;
+            span.style.fontSize = `${fontSize}px`;
+        }
+    );
 }
 
 /**

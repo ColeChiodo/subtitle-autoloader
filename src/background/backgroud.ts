@@ -1,6 +1,5 @@
 import { Searcher } from "fast-fuzzy";
 
-
 const EXT = "[Kuraji]";
 
 /**
@@ -17,148 +16,173 @@ log.info("Background worker loaded");
 
 // Types
 interface ParsedTitle {
-  title: string;
-  season?: number;
-  episode?: number;
-  episodeTitle?: string;
-  year?: number;
+    title: string;
+    season?: number;
+    episode?: number;
+    episodeTitle?: string;
+    year?: number;
 }
 
 interface AnimeMetadata {
-  english?: string;
-  romaji?: string;
-  native?: string;
-  synonyms?: string[];
-  episodes?: { title: string; number: number; season?: number }[];
+    english?: string;
+    romaji?: string;
+    native?: string;
+    synonyms?: string[];
+    episodes?: { title: string; number: number; season?: number }[];
 }
 
 interface SubtitleFile {
-  name: string;
-  url: string;
+    name: string;
+    url: string;
 }
+
+// GitHub base URLs
+const GITHUB_BASE = "https://github.com/Ajatt-Tools/kitsunekko-mirror/tree/8594c17708c2673d86b43530a6cd1a4a6877b908/subtitles/";
+const RAW_BASE = "https://raw.githubusercontent.com/Ajatt-Tools/kitsunekko-mirror/8594c17708c2673d86b43530a6cd1a4a6877b908/subtitles/";
+
+// Keep track of visited directories to prevent loops
+const visitedDirs = new Set<string>();
 
 /**
  * Parse the input video title
- * @param videoTitle
- * @returns ParsedTitle object
+ * @param videoTitle 
+ * @returns ParsedTitle
  */
 export function parseVideoTitle(videoTitle: string): ParsedTitle {
-	const yearMatch = videoTitle.match(/\((\d{4})\)/);
-	const year = yearMatch ? parseInt(yearMatch[1]) : undefined;
+    const yearMatch = videoTitle.match(/\((\d{4})\)/);
+    const year = yearMatch ? parseInt(yearMatch[1]) : undefined;
 
-	const seMatch = videoTitle.match(/S(\d+)[\s:]*E(\d+)/i);
-	const season = seMatch ? parseInt(seMatch[1]) : undefined;
-	const episode = seMatch ? parseInt(seMatch[2]) : undefined;
+    const seMatch = videoTitle.match(/S(\d+)[\s:]*E(\d+)/i);
+    const season = seMatch ? parseInt(seMatch[1]) : undefined;
+    const episode = seMatch ? parseInt(seMatch[2]) : undefined;
 
-	// Extract episode title (after 2nd '-')
-	const parts = videoTitle.split(" - ");
-	const mainTitle = parts[0].replace(/\(.*?\)/g, "").trim();
-	const episodeTitle = parts.length > 2 ? parts.slice(2).join(" - ").replace(/\(.*?\)/g, "").trim() : undefined;
+    const parts = videoTitle.split(" - ");
+    const mainTitle = parts[0].replace(/\(.*?\)/g, "").trim();
+    const episodeTitle = parts.length > 2 ? parts.slice(2).join(" - ").replace(/\(.*?\)/g, "").trim() : undefined;
 
-	return { title: mainTitle, season, episode, episodeTitle, year };
+    return { title: mainTitle, season, episode, episodeTitle, year };
 }
 
 /**
  * Fetch metadata from AniList
- * @param title
+ * @param title 
  * @returns AnimeMetadata
  */
 export async function lookupAnimeMetadata(title: string): Promise<AnimeMetadata> {
-  	const query = `
-		query ($search: String) {
-			Media(search: $search, type: ANIME) {
-				title {
-					english
-					romaji
-					native
-				}
-				synonyms
-				episodes
-			}
-		}
-  	`;
+    const query = `
+        query ($search: String) {
+            Media(search: $search, type: ANIME) {
+                title {
+                    english
+                    romaji
+                    native
+                }
+                synonyms
+                episodes
+            }
+        }
+    `;
 
-	const res = await fetch("https://graphql.anilist.co", {
-		method: "POST",
-		headers: { "Content-Type": "application/json", "Accept": "application/json" },
-		body: JSON.stringify({ query, variables: { search: title } }),
-	});
+    const res = await fetch("https://graphql.anilist.co", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ query, variables: { search: title } }),
+    });
 
-	if (!res.ok) {
-		log.warn(`AniList lookup failed for title: ${title}`);
-		return {};
-	}
+    if (!res.ok) {
+        log.warn(`AniList lookup failed for title: ${title}`);
+        return {};
+    }
 
-	const json = await res.json();
-	const media = json.data?.Media;
-	if (!media) return {};
+    const json = await res.json();
+    const media = json.data?.Media;
+    if (!media) return {};
 
-	return {
-		english: media.title.english,
-		romaji: media.title.romaji,
-		native: media.title.native,
-		synonyms: media.synonyms || [],
-	};
+    return {
+        english: media.title.english,
+        romaji: media.title.romaji,
+        native: media.title.native,
+        synonyms: media.synonyms || [],
+    };
 }
 
 /**
  * Generate multiple possible title variants
- * @param parsed
- * @param meta 
- * @returns array of candidate title strings
+ * @param parsed 
+ * @param meta
+ * @returns array of possible title variants
  */
 export function generateTitleVariants(parsed: ParsedTitle, meta: AnimeMetadata): string[] {
-	const candidates = new Set<string>();
+    const candidates = new Set<string>();
 
-	const add = (s?: string) => {
-		if (!s) return;
-		const base = s.trim();
-		candidates.add(base);
-		candidates.add(base.replace(/\s+/g, "+"));
-		candidates.add(base.replace(/\s+/g, "."));
-		candidates.add(base.replace(/\s+/g, "_"));
-		candidates.add(base.toLowerCase());
-	};
+    const add = (s?: string) => {
+        if (!s) return;
+        const base = s.trim();
+        candidates.add(base);
+        candidates.add(base.replace(/\s+/g, "+"));
+        candidates.add(base.replace(/\s+/g, "."));
+        candidates.add(base.replace(/\s+/g, "_"));
+        candidates.add(base.toLowerCase());
+    };
 
-	add(parsed.title);
-	add(meta.english);
-	add(meta.romaji);
-	add(meta.native);
-	meta.synonyms?.forEach(add);
+    add(parsed.title);
+    add(meta.english);
+    add(meta.romaji);
+    add(meta.native);
+    meta.synonyms?.forEach(add);
 
-	return Array.from(candidates);
+    return Array.from(candidates);
 }
 
 /**
- * Fetch Kitsunekko directory HTML
- * @param animeDir 
- * @returns 
+ * Recursively fetch subtitle files from GitHub directory and subdirectories
+ * @param animeDir
+ * @returns array of subtitle files
  */
-async function fetchDirPage(animeDir: string): Promise<string | null> {
-	const url = `https://kitsunekko.net/dirlist.php?dir=subtitles/japanese/${animeDir}/`;
-	const res = await fetch(encodeURI(url));
-	if (!res.ok) return null;
-	return res.text();
-}
+async function fetchGitHubSubtitlesSafe(animeDir: string, depth = 0, maxDepth = 4): Promise<SubtitleFile[]> {
+    if (depth > maxDepth) return [];
+    if (visitedDirs.has(animeDir)) return [];
+    visitedDirs.add(animeDir);
 
-/**
- * Extract subtitle files from HTML page
- * @param html
- * @returns Array of all subtitle files on page
- */
-function extractSubtitleFiles(html: string): SubtitleFile[] {
-	const regex = /href="([^"]+\.srt)"/gi;
-	const files: SubtitleFile[] = [];
-	let match;
+    const url = `${GITHUB_BASE}${encodeURIComponent(animeDir)}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
 
-	while ((match = regex.exec(html))) {
-		const relativePath = decodeURIComponent(match[1]);
-		const name = relativePath.split("/").pop() || "";
-		const url = new URL(relativePath, "https://kitsunekko.net/").href;
-		files.push({ name, url });
-	}
+    const html = await res.text();
+    const files: SubtitleFile[] = [];
 
-	return files;
+    // Match files
+    const fileRegex = /<a[^>]+href="\/Ajatt-Tools\/kitsunekko-mirror\/blob\/[a-f0-9]+\/subtitles\/([^"]+\.(srt|ass))"/gi;
+    let match;
+    while ((match = fileRegex.exec(html))) {
+        const relativePath = match[1];
+        const name = relativePath.split("/").pop()!;
+        const ext = name.split(".").pop()?.toLowerCase();
+
+        if (ext === "ass") {
+            log.warn(`Found ${name} (ASS) — only SRT supported`);
+            continue;
+        } else if (ext !== "srt") continue;
+
+        files.push({ name, url: `${RAW_BASE}${relativePath}` });
+    }
+
+    // Match subdirectories
+    const dirRegex = /<a[^>]+href="\/Ajatt-Tools\/kitsunekko-mirror\/tree\/[a-f0-9]+\/subtitles\/([^"]+)"/gi;
+    const subdirs: string[] = [];
+    while ((match = dirRegex.exec(html))) {
+        const subdir = match[1];
+        if (!visitedDirs.has(subdir)) subdirs.push(subdir);
+    }
+
+    // Fetch subdirectories sequentially with small delay to prevent 429
+    for (const subdir of subdirs) {
+        await new Promise(r => setTimeout(r, 150)); // 150ms delay
+        const subFiles = await fetchGitHubSubtitlesSafe(subdir, depth + 1, maxDepth);
+        files.push(...subFiles);
+    }
+
+    return files;
 }
 
 /**
@@ -166,110 +190,102 @@ function extractSubtitleFiles(html: string): SubtitleFile[] {
  * @param files 
  * @param parsed 
  * @param meta 
- * @returns SubtitleFile if found
+ * @returns SubtitleFile
  */
 function matchSubtitleFile(
-	files: SubtitleFile[],
-	parsed: ParsedTitle,
-	meta: AnimeMetadata
+    files: SubtitleFile[],
+    parsed: ParsedTitle,
+    meta: AnimeMetadata
 ): SubtitleFile | null {
-	if (files.length === 0) return null;
+    if (files.length === 0) return null;
 
-	// Exact Season/Episode match
-	if (parsed.season && parsed.episode) {
-		const regex = new RegExp(`S0?${parsed.season}E0?${parsed.episode}`, "i");
-		const direct = files.find((f) => regex.test(f.name));
-		if (direct) return direct;
-	}
+    if (parsed.season && parsed.episode) {
+        const regex = new RegExp(`S0?${parsed.season}E0?${parsed.episode}`, "i");
+        const direct = files.find((f) => regex.test(f.name));
+        if (direct) return direct;
+    }
 
-	// Try matching by Episode Title
-	const candidates = files.map((f) => f.name.toLowerCase());
-	const searcher = new Searcher(candidates, { returnMatchData: false, threshold: 0.7 });
+    const candidates = files.map((f) => f.name.toLowerCase());
+    const searcher = new Searcher(candidates, { returnMatchData: false, threshold: 0.7 });
 
-	// if parsed episode title exists
-	if (parsed.episodeTitle) {
-		const titleMatch = searcher.search(parsed.episodeTitle.toLowerCase())[0];
-		if (titleMatch) {
-			const matchedFile = files.find((f) => f.name.toLowerCase() === titleMatch);
-			if (matchedFile) return matchedFile;
-		}
-	}
+    if (parsed.episodeTitle) {
+        const titleMatch = searcher.search(parsed.episodeTitle.toLowerCase())[0];
+        if (titleMatch) {
+            const matchedFile = files.find((f) => f.name.toLowerCase() === titleMatch);
+            if (matchedFile) return matchedFile;
+        }
+    }
 
-	// Use AniList metadata episode list if available
-	if (meta.episodes && meta.episodes.length > 0 && parsed.episodeTitle) {
-		const metaMatch = meta.episodes.find((ep) =>
-			ep.title?.toLowerCase().includes(parsed.episodeTitle!.toLowerCase())
-		);
-		if (metaMatch) {
-			const regex = new RegExp(`E0?${metaMatch.number}`, "i");
-			const byNum = files.find((f) => regex.test(f.name));
-			if (byNum) return byNum;
-		}
-	}
+    if (meta.episodes && meta.episodes.length > 0 && parsed.episodeTitle) {
+        const metaMatch = meta.episodes.find((ep) =>
+            ep.title?.toLowerCase().includes(parsed.episodeTitle!.toLowerCase())
+        );
+        if (metaMatch) {
+            const regex = new RegExp(`E0?${metaMatch.number}`, "i");
+            const byNum = files.find((f) => regex.test(f.name));
+            if (byNum) return byNum;
+        }
+    }
 
-	// Fallback to fuzzy best filename match
-	const best = searcher.search(parsed.title.toLowerCase())[0];
-	if (best) {
-		const fallback = files.find((f) => f.name.toLowerCase() === best);
-		if (fallback) return fallback;
-	}
+    const best = searcher.search(parsed.title.toLowerCase())[0];
+    if (best) {
+        const fallback = files.find((f) => f.name.toLowerCase() === best);
+        if (fallback) return fallback;
+    }
 
-	// Last resort: return first file
-	return files[0];
+    return files[0];
 }
 
 /**
- * Final fetch of subtitle file
+ * Final Fetch for subtitle file content
  * @param file 
- * @returns 
+ * @returns string of subtitle content
  */
 async function fetchSubtitleFile(file: SubtitleFile): Promise<string> {
-	const res = await fetch(file.url);
-	if (!res.ok) log.error(`Failed to fetch subtitle: ${file.url}`);
-	return res.text();
+    const res = await fetch(file.url);
+    if (!res.ok) log.error(`Failed to fetch subtitle: ${file.url}`);
+    return res.text();
 }
 
-/** 
- * Fetch subtitles
+/**
+ * Main function: fetch subtitle by video title
  * @param videoTitle 
- * @returns .srt Text File 
+ * @returns Object containing subtitle text and file name
  */
-export async function fetchSubtitle(videoTitle: string, context?: { cancelled: boolean }): Promise<string> {
-	log.debug(`Fetching subtitles for: ${videoTitle}`);
-	const parsed = parseVideoTitle(videoTitle);
-	const meta = await lookupAnimeMetadata(parsed.title);
-	const variants = generateTitleVariants(parsed, meta);
+export async function fetchSubtitle(
+    videoTitle: string,
+    context?: { cancelled: boolean }
+): Promise<{ text: string; fileName: string | null }> {
+    log.debug(`Fetching subtitles for: ${videoTitle}`);
+    visitedDirs.clear();
 
-	for (const variant of variants) {
-		if (context?.cancelled) {
-		log.debug(`Subtitle search cancelled for ${videoTitle}`);
-		return "";
-		}
+    const parsed = parseVideoTitle(videoTitle);
+    const meta = await lookupAnimeMetadata(parsed.title);
+    const variants = generateTitleVariants(parsed, meta);
 
-		log.debug(`Trying folder variant: ${variant}`);
-		const html = await fetchDirPage(variant);
-		if (!html) continue;
+    for (const variant of variants) {
+        if (context?.cancelled) {
+            log.debug(`Subtitle search cancelled for ${videoTitle}`);
+            return { text: "", fileName: null };
+        }
 
-		const files = extractSubtitleFiles(html);
-		if (files.length === 0) {
-		log.debug(`No subtitle files found in ${variant}`);
-		continue;
-		}
+        log.debug(`Trying folder variant: ${variant}`);
+        const files = await fetchGitHubSubtitlesSafe(variant);
+        if (files.length === 0) {
+            log.debug(`No subtitle files found in ${variant}`);
+            continue;
+        }
 
-		const match = matchSubtitleFile(files, parsed, meta);
-		if (match) {
-		if (!match.name.endsWith(".srt")) {
-			log.debug(`Found ${match.name} (non-SRT) — archive extraction not yet supported`);
-			continue;
-		}
+        const match = matchSubtitleFile(files, parsed, meta);
+        if (match) {
+            log.debug(`Matched subtitle: ${match.name}`);
+            const text = await fetchSubtitleFile(match);
+            return { text, fileName: match.name };
+        }
+    }
 
-		log.debug(`Matched subtitle: ${match.name}`);
-		return await fetchSubtitleFile(match);
-		}
-	}
-
-	log.warn("No subtitle found for any variant");
-	return "";
+    log.warn("No subtitle found for any variant");
+    return { text: "", fileName: null };
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -281,38 +297,39 @@ let lastRequest = { title: "", timestamp: 0 };
 const DEBOUNCE_MS = 1000;
 
 /**
- * Listen for messages from content script
+ * Message handler.
+ * @param msg 
+ * @param sender 
+ * @returns Object containing subtitle text and file name
  */
 browser.runtime.onMessage.addListener(async (msg, sender) => {
-	log.debug(`Received message from ${sender.id}`, msg);
+    log.debug(`Received message from ${sender.id}`, msg);
 
-	if (msg.type !== "GET_SUBS") return;
+    if (msg.type !== "GET_SUBS") return;
 
-	const tabId = sender.tab?.id ?? 0;
+    const tabId = sender.tab?.id ?? 0;
 
-	// Debounce identical title within 1s
-	if (msg.title === lastRequest.title && Date.now() - lastRequest.timestamp < DEBOUNCE_MS) {
-		log.debug(`Skipping duplicate subtitle request for ${msg.title}`);
-		return "";
-	}
-	lastRequest = { title: msg.title, timestamp: Date.now() };
+    if (msg.title === lastRequest.title && Date.now() - lastRequest.timestamp < DEBOUNCE_MS) {
+        log.debug(`Skipping duplicate subtitle request for ${msg.title}`);
+        return { text: "", fileName: null };
+    }
+    lastRequest = { title: msg.title, timestamp: Date.now() };
 
-	// Cancel previous search for this tab
-	const prev = activeSearches.get(tabId);
-	if (prev) prev.cancelled = true;
+    const prev = activeSearches.get(tabId);
+    if (prev) prev.cancelled = true;
 
-	const context = { cancelled: false };
-	activeSearches.set(tabId, context);
+    const context = { cancelled: false };
+    activeSearches.set(tabId, context);
 
-	log.debug(`[${tabId}] Starting subtitle fetch for: ${msg.title}`);
-	const text = await fetchSubtitle(msg.title, context);
+    log.debug(`[${tabId}] Starting subtitle fetch for: ${msg.title}`);
+    const result = await fetchSubtitle(msg.title, context);
 
-	if (context.cancelled) {
-		log.debug(`[${tabId}] Search cancelled for ${msg.title}`);
-		return "";
-	}
+    if (context.cancelled) {
+        log.debug(`[${tabId}] Search cancelled for ${msg.title}`);
+        return { text: "", fileName: null };
+    }
 
-	activeSearches.delete(tabId);
-	log.debug(`[${tabId}] Finished subtitle fetch, length: ${text.length}`);
-	return text;
+    activeSearches.delete(tabId);
+    log.debug(`[${tabId}] Finished subtitle fetch, length: ${result.text.length}`);
+    return result;
 });

@@ -13,7 +13,7 @@ I created Kuraji to automatically find and load Japanese subtitles, saving time 
 
 * Movable, colorable, resizable subtitles.
 * Automatically detects the title, season, and episode of your anime.
-* Fetches subtitles from Japanese subtitle website.
+* Fetches subtitles from Japanese subtitle repository.
 * Matches the best subtitle using fuzzy search and episode metadata.
 * Supports `.srt` subtitle files for immediate playback in Jellyfin.
 
@@ -42,7 +42,7 @@ I created Kuraji to automatically find and load Japanese subtitles, saving time 
    Creates multiple search-friendly variants of the title to maximize matching chances.
 
 4. **Fetch Subtitle Directory**
-   Downloads HTML pages from Japanese subtitle repositories (currently Kitsunekko).
+   Sources from Japanese subtitle repositories (currently [Kitsunekko Mirror](https://github.com/Ajatt-Tools/kitsunekko-mirror)).
 
 5. **Extract and Match Subtitle Files**
 

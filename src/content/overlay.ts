@@ -1,4 +1,29 @@
-let subtitleColor = 'yellow';
+/**
+ * Turn a file name in url format into a human-readable string
+ * @param rawName 
+ * @returns 
+ */
+function sanitizeFileName(rawName: string): string {
+    try {
+        // Decode URL-encoded characters
+        let name = decodeURIComponent(rawName);
+
+        // Optional: remove any leading/trailing whitespace
+        name = name.trim();
+
+        // Optional: replace brackets with normal parentheses, just for display
+        name = name.replace(/\[/g, '(').replace(/\]/g, ')');
+
+        // Optional: remove any non-printable/control characters
+        name = name.replace(/[\x00-\x1F\x7F]/g, '');
+
+        return name;
+    } catch (e) {
+        // If decoding fails, fallback to the raw string
+        return rawName;
+    }
+}
+
 
 /**
  * Initializes the overlay and subtitle span
@@ -23,7 +48,7 @@ export function initSubtitles() {
         position: 'absolute',
         background: 'rgba(0,0,0,0.5)',
         padding: '2px 6px',
-        color: subtitleColor,
+        color: 'white',
         fontSize: '25px',
         textShadow: '2px 2px 4px black',
         cursor: 'move',
@@ -67,13 +92,17 @@ export function initSubtitles() {
 /**
  * Creates the menu with toggle, offset buttons, and color options
  */
-export function createMenu(parent: HTMLElement, defaults: { subs: boolean, offset: number, color: string, fontSize: number }, toggleCallback: (subs: boolean, offset: number, color: string, fontSize: number) => void) {
+export function createMenu(
+    parent: HTMLElement,
+    defaults: { subs: boolean; offset: number; color: string; fontSize: number; fileName: string | null },
+    toggleCallback: (subs: boolean, offset: number, color: string, fontSize: number) => void
+) {
     const existing = document.querySelector('.kuraji-menu-button');
     if (existing) return;
 
     let subtitleColor = defaults.color;
     let subtitleOffset = defaults.offset;
-	let subtitleFontSize = defaults.fontSize;
+    let subtitleFontSize = defaults.fontSize;
 
     const button = document.createElement('div');
     button.classList.add('kuraji-menu-button');
@@ -92,7 +121,7 @@ export function createMenu(parent: HTMLElement, defaults: { subs: boolean, offse
         position: 'relative'
     });
 
-    // Dropdown container (drop-up)
+    // Dropdown container
     const dropdown = document.createElement('div');
     Object.assign(dropdown.style, {
         position: 'absolute',
@@ -110,6 +139,22 @@ export function createMenu(parent: HTMLElement, defaults: { subs: boolean, offse
         fontSize: '14px'
     });
     dropdown.addEventListener('click', (e) => e.stopPropagation());
+
+    // Display subtitle file name at top
+    if (defaults.fileName) {
+        const fileNameEl = document.createElement('div');
+        fileNameEl.textContent = `${sanitizeFileName(defaults.fileName || 'Kuraji Subtitles')}`;
+        Object.assign(fileNameEl.style, {
+            fontWeight: 'bold',
+            marginBottom: '10px',
+            fontSize: '12px',
+            color: '#ffd700',
+            textAlign: 'center',
+			background: 'rgba(0,0,0,0.5)',
+			borderRadius: '4px',
+        });
+        dropdown.appendChild(fileNameEl);
+    }
 
     // Subtitles toggle (sliding switch)
     const toggleLabel = document.createElement('label');
@@ -153,7 +198,7 @@ export function createMenu(parent: HTMLElement, defaults: { subs: boolean, offse
     });
     dropdown.appendChild(toggleLabel);
 
-    // Container for offset display and hint button
+	    // Container for offset display and hint button
 	const offsetRow = document.createElement('div');
 	Object.assign(offsetRow.style, {
 		display: 'flex',
