@@ -6,9 +6,9 @@
 	"description": "Automatically searches for and loads Japanese subtitles for your videos.",
 
 	"icons": {
-		"16": "assets/icons/cc-icon.png",
-		"48": "assets/icons/cc-icon.png",
-		"128": "assets/icons/cc-icon.png"
+		"16": "assets/icons/cc-icon-white.png",
+		"48": "assets/icons/cc-icon-white.png",
+		"128": "assets/icons/cc-icon-white.png"
 	},
 
 	"permissions": [
@@ -44,3 +44,5 @@
 		"default_popup": "src/popup/popup.html"
 	}
 }
+
+

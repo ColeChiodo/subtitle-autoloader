@@ -28,7 +28,7 @@ interface AnimeMetadata {
     romaji?: string;
     native?: string;
     synonyms?: string[];
-    episodes?: { title: string; number: number; season?: number }[];
+    malId?: number;
 }
 
 interface SubtitleFile {
@@ -49,18 +49,58 @@ const visitedDirs = new Set<string>();
  * @returns ParsedTitle
  */
 export function parseVideoTitle(videoTitle: string): ParsedTitle {
+    // Extract optional year, e.g. "(2002)"
     const yearMatch = videoTitle.match(/\((\d{4})\)/);
     const year = yearMatch ? parseInt(yearMatch[1]) : undefined;
 
+    // Extract optional season/episode pattern, e.g. "S1E2" or "s02e05"
     const seMatch = videoTitle.match(/S(\d+)[\s:]*E(\d+)/i);
     const season = seMatch ? parseInt(seMatch[1]) : undefined;
     const episode = seMatch ? parseInt(seMatch[2]) : undefined;
 
-    const parts = videoTitle.split(" - ");
-    const mainTitle = parts[0].replace(/\(.*?\)/g, "").trim();
-    const episodeTitle = parts.length > 2 ? parts.slice(2).join(" - ").replace(/\(.*?\)/g, "").trim() : undefined;
+    // Split by " - " but be resilient to missing parts
+    const parts = videoTitle.split(" - ").map(p => p.trim()).filter(Boolean);
+
+    // Base name (always first part)
+    const mainTitle = parts[0]?.replace(/\(.*?\)/g, "").trim() || videoTitle.trim();
+
+    let episodeTitle: string | undefined;
+
+    // Handle "NAME - SxEx - Episode Title"
+    if (seMatch && parts.length > 2) {
+        episodeTitle = parts.slice(2).join(" - ").replace(/\(.*?\)/g, "").trim();
+    }
+    // Handle "NAME - Episode Title" (no SxEx)
+    else if (parts.length > 1) {
+        episodeTitle = parts.slice(1).join(" - ").replace(/\(.*?\)/g, "").trim();
+    }
 
     return { title: mainTitle, season, episode, episodeTitle, year };
+}
+
+/**
+ * Query MAL for all episodes
+ * @param malId 
+ * @returns List of all episodes
+ */
+async function getAllEpisodesMAL(malId: number) {
+    log.debug(`Fetching all episodes for MAL ID ${malId}`);
+    let episodes: { number: number, title: string }[] = [];
+    let page = 1;
+    let morePages = true;
+
+    while (morePages) {
+        const res = await fetch(`https://api.jikan.moe/v4/anime/${malId}/episodes?page=${page}`);
+        const json = await res.json();
+        episodes.push(...json.data.map((ep: any) => ({
+            number: ep.mal_id,
+            title: ep.title
+        })));
+        morePages = !!json.pagination.has_next_page;
+        page++;
+    }
+
+    return episodes;
 }
 
 /**
@@ -69,6 +109,7 @@ export function parseVideoTitle(videoTitle: string): ParsedTitle {
  * @returns AnimeMetadata
  */
 export async function lookupAnimeMetadata(title: string): Promise<AnimeMetadata> {
+    log.debug(`Fetching metadata for title: ${title}`);
     const query = `
         query ($search: String) {
             Media(search: $search, type: ANIME) {
@@ -79,6 +120,7 @@ export async function lookupAnimeMetadata(title: string): Promise<AnimeMetadata>
                 }
                 synonyms
                 episodes
+                idMal
             }
         }
     `;
@@ -96,13 +138,17 @@ export async function lookupAnimeMetadata(title: string): Promise<AnimeMetadata>
 
     const json = await res.json();
     const media = json.data?.Media;
-    if (!media) return {};
+    if (!media) {
+        log.warn(`AniList lookup failed for title: ${title}`);
+        return {};
+    }
 
     return {
         english: media.title.english,
         romaji: media.title.romaji,
         native: media.title.native,
         synonyms: media.synonyms || [],
+        malId: media.idMal,
     };
 }
 
@@ -192,40 +238,46 @@ async function fetchGitHubSubtitlesSafe(animeDir: string, depth = 0, maxDepth = 
  * @param meta 
  * @returns SubtitleFile
  */
-function matchSubtitleFile(
+async function matchSubtitleFile(
     files: SubtitleFile[],
     parsed: ParsedTitle,
     meta: AnimeMetadata
-): SubtitleFile | null {
+): Promise<SubtitleFile | null> {
     if (files.length === 0) return null;
+    log.debug(`Found ${files.length} subtitle files`);
 
     if (parsed.season && parsed.episode) {
         const regex = new RegExp(`S0?${parsed.season}E0?${parsed.episode}`, "i");
         const direct = files.find((f) => regex.test(f.name));
+        log.debug(`Trying to match season ${parsed.season} episode ${parsed.episode}`);
         if (direct) return direct;
     }
 
     const candidates = files.map((f) => f.name.toLowerCase());
     const searcher = new Searcher(candidates, { returnMatchData: false, threshold: 0.7 });
 
-    if (parsed.episodeTitle) {
-        const titleMatch = searcher.search(parsed.episodeTitle.toLowerCase())[0];
-        if (titleMatch) {
-            const matchedFile = files.find((f) => f.name.toLowerCase() === titleMatch);
-            if (matchedFile) return matchedFile;
-        }
-    }
+	// from episode title, convert to episode number by querying anilist for episode number from episode title
+    log.debug(`Trying to match episode title: ${parsed.episodeTitle}`);
 
-    if (meta.episodes && meta.episodes.length > 0 && parsed.episodeTitle) {
-        const metaMatch = meta.episodes.find((ep) =>
-            ep.title?.toLowerCase().includes(parsed.episodeTitle!.toLowerCase())
-        );
-        if (metaMatch) {
-            const regex = new RegExp(`E0?${metaMatch.number}`, "i");
-            const byNum = files.find((f) => regex.test(f.name));
-            if (byNum) return byNum;
-        }
+    if (!meta.malId) {
+        log.debug(`No MAL ID found for ${parsed.title}`);
+        return files[0];
     }
+    const episodes = await getAllEpisodesMAL(meta.malId);
+
+	if (episodes && episodes.length > 0 && parsed.episodeTitle) {
+		const metaMatch = episodes.find((ep) =>
+			ep.title?.toLowerCase().includes(parsed.episodeTitle!.toLowerCase())
+		);
+		if (metaMatch) {
+			const regex = new RegExp(`E0*${metaMatch.number}(?!\\d)`, "i");
+			const byNum = files.find((f) => regex.test(f.name));
+			if (byNum) {
+                log.debug(`Matched episode "${parsed.episodeTitle}" to number: ${metaMatch.number}`);
+                return byNum;
+            }
+		}
+	}
 
     const best = searcher.search(parsed.title.toLowerCase())[0];
     if (best) {
@@ -261,6 +313,16 @@ export async function fetchSubtitle(
 
     const parsed = parseVideoTitle(videoTitle);
     const meta = await lookupAnimeMetadata(parsed.title);
+
+    const hasAniListEntry =
+        meta &&
+        (meta.english || meta.romaji || meta.native || (meta.synonyms?.length ?? 0) > 0);
+
+    if (!hasAniListEntry) {
+        log.warn(`AniList has no record for "${parsed.title}". Returning fallback text.`);
+        return { text: "Kuraji -「クラジ」", fileName: null };
+    }
+
     const variants = generateTitleVariants(parsed, meta);
 
     for (const variant of variants) {
@@ -276,7 +338,7 @@ export async function fetchSubtitle(
             continue;
         }
 
-        const match = matchSubtitleFile(files, parsed, meta);
+        const match = await matchSubtitleFile(files, parsed, meta);
         if (match) {
             log.debug(`Matched subtitle: ${match.name}`);
             const text = await fetchSubtitleFile(match);

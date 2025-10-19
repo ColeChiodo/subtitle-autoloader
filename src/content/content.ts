@@ -14,6 +14,32 @@ const log = {
     error: (msg: string, ...args: any[]) => console.error(`${EXT} [ERROR]`, msg, ...args),
 };
 
+/**
+ * Turn a file name in url format into a human-readable string
+ * @param rawName 
+ * @returns 
+ */
+function sanitizeFileName(rawName: string): string {
+    try {
+        // Decode URL-encoded characters
+        let name = decodeURIComponent(rawName);
+
+        // Optional: remove any leading/trailing whitespace
+        name = name.trim();
+
+        // Optional: replace brackets with normal parentheses, just for display
+        name = name.replace(/\[/g, '(').replace(/\]/g, ')');
+
+        // Optional: remove any non-printable/control characters
+        name = name.replace(/[\x00-\x1F\x7F]/g, '');
+
+        return name;
+    } catch (e) {
+        // If decoding fails, fallback to the raw string
+        return rawName;
+    }
+}
+
 let currentOverlay: HTMLElement | null = null;
 let currentVideo: HTMLVideoElement | null = null;
 let resizeObserver: ResizeObserver | null = null;
@@ -70,19 +96,13 @@ async function attachOverlayToVideo(video: HTMLVideoElement) {
     fontSize = settings.fontSize;
     subtitleColor = settings.color;
 
+    // Get video title from somewhere on the page
     const titleEl = document.querySelector('.pageTitle');
-    if (!titleEl) return console.error('No title found');
+    if (!titleEl) return log.error('No title found');
+    const title = titleEl.textContent;
 
-    // Request subtitle from background script
-    const result = await browser.runtime.sendMessage({ type: 'GET_SUBS', title: titleEl.textContent });
-    const { text: srtText, fileName: fileName } = result as { text: string; fileName: string | null };
-
-    if (!srtText) return console.error('No subtitles found');
-
-    const subtitles = parseSRTFile(srtText);
-
-    const overlay = initSubtitles();
-    if (!overlay) return console.error('Failed to create subtitle overlay');
+    const overlay = initSubtitles(subsEnabled ? { subs: true } : { subs: false });
+    if (!overlay) return log.error('Failed to create subtitle overlay');
 
     currentOverlay = overlay;
     currentVideo = video;
@@ -93,6 +113,7 @@ async function attachOverlayToVideo(video: HTMLVideoElement) {
 
     function updateOverlayPosition() {
         const rect = video.getBoundingClientRect();
+        if (!overlay) return;
         overlay.style.top = `${rect.top + rect.height * 0.85}px`;
         overlay.style.left = `${rect.left + rect.width / 2}px`;
         overlay.style.transform = 'translate(-50%, -50%)';
@@ -104,30 +125,18 @@ async function attachOverlayToVideo(video: HTMLVideoElement) {
     window.addEventListener('resize', updateOverlayPosition);
     window.addEventListener('scroll', updateOverlayPosition);
 
-    let lastSubtitle = '';
-    video.addEventListener('timeupdate', () => {
-        if (!subsEnabled) return;
-        const currentTime = video.currentTime + (subtitleOffset / 1000);
-        const current = subtitles.find(s => currentTime >= s.start && currentTime <= s.end);
-        const text = current ? current.text : '';
-        span.textContent = text;
-        span.style.color = subtitleColor;
-        if (text !== lastSubtitle) lastSubtitle = text;
-    });
-
+    // Get location of where menu button should go
     const osdControlsList = document.querySelectorAll<HTMLDivElement>('.osdControls');
     if (!osdControlsList.length) return;
-
     const osdControls = osdControlsList[osdControlsList.length - 1];
     const buttonsContainerList = osdControls.querySelectorAll<HTMLDivElement>('.buttons');
     if (!buttonsContainerList.length) return;
-
     const buttonsContainer = buttonsContainerList[buttonsContainerList.length - 1];
 
     // Pass the fileName to createMenu for display
-    createMenu(
+    const menu = createMenu(
         buttonsContainer,
-        { subs: subsEnabled, offset: subtitleOffset, color: subtitleColor, fontSize, fileName },
+        { subs: subsEnabled, offset: subtitleOffset, color: subtitleColor, fontSize },
         async (subs, offset, color, fontS) => {
             let updated = false;
 
@@ -162,6 +171,34 @@ async function attachOverlayToVideo(video: HTMLVideoElement) {
             span.style.fontSize = `${fontSize}px`;
         }
     );
+    if (!menu) return log.error('Failed to create menu');
+
+    // Request subtitle from background script
+    const result = await browser.runtime.sendMessage({ type: 'GET_SUBS', title: title });
+    const { text: srtText, fileName: fileName } = result as { text: string; fileName: string | null };
+    if (!srtText) {
+        const fileNameSpan = menu.querySelector('.fileName');
+        if (fileNameSpan) fileNameSpan.textContent = 'No subtitles found';
+        return log.error('No subtitles found');
+    } 
+
+    // Parse subtitle file
+    const subtitles = parseSRTFile(srtText);
+
+    // Put filename in menu child with class fileName
+    const fileNameSpan = menu.querySelector('.fileName');
+    if (fileNameSpan) fileNameSpan.textContent = `${sanitizeFileName(fileName || 'Kuraji Subtitles')}` || 'No subtitles found';
+
+    let lastSubtitle = '';
+    video.addEventListener('timeupdate', () => {
+        if (!subsEnabled) return;
+        const currentTime = video.currentTime + (subtitleOffset / 1000);
+        const current = subtitles.find(s => currentTime >= s.start && currentTime <= s.end);
+        const text = current ? current.text : '';
+        span.textContent = text;
+        span.style.color = subtitleColor;
+        if (text !== lastSubtitle) lastSubtitle = text;
+    });
 }
 
 /**

@@ -1,35 +1,12 @@
 /**
- * Turn a file name in url format into a human-readable string
- * @param rawName 
- * @returns 
- */
-function sanitizeFileName(rawName: string): string {
-    try {
-        // Decode URL-encoded characters
-        let name = decodeURIComponent(rawName);
-
-        // Optional: remove any leading/trailing whitespace
-        name = name.trim();
-
-        // Optional: replace brackets with normal parentheses, just for display
-        name = name.replace(/\[/g, '(').replace(/\]/g, ')');
-
-        // Optional: remove any non-printable/control characters
-        name = name.replace(/[\x00-\x1F\x7F]/g, '');
-
-        return name;
-    } catch (e) {
-        // If decoding fails, fallback to the raw string
-        return rawName;
-    }
-}
-
-
-/**
  * Initializes the overlay and subtitle span
  */
-export function initSubtitles() {
+export function initSubtitles(defaults: { subs: boolean; }) {
+    const existing = document.querySelector('.kuraji-subtitles');
+    if (existing) return;
+
     const overlay = document.createElement('div');
+    overlay.classList.add('kuraji-subtitles');
     Object.assign(overlay.style, {
         position: 'fixed',
         top: '0',
@@ -58,7 +35,7 @@ export function initSubtitles() {
 
     overlay.appendChild(span);
     document.body.appendChild(overlay);
-    overlay.style.display = 'none';
+    overlay.style.display = defaults.subs ? 'flex' : 'none';
 
     let isDragging = false;
     let offsetX = 0;
@@ -94,7 +71,7 @@ export function initSubtitles() {
  */
 export function createMenu(
     parent: HTMLElement,
-    defaults: { subs: boolean; offset: number; color: string; fontSize: number; fileName: string | null },
+    defaults: { subs: boolean; offset: number; color: string; fontSize: number; },
     toggleCallback: (subs: boolean, offset: number, color: string, fontSize: number) => void
 ) {
     const existing = document.querySelector('.kuraji-menu-button');
@@ -110,8 +87,8 @@ export function createMenu(
         width: '40px',
         height: '40px',
         cursor: 'pointer',
-        zIndex: '10000000',
-        backgroundImage: `url(${browser.runtime.getURL('assets/icons/cc-icon.png')})`,
+        zIndex: '999999999',
+        backgroundImage: `url(${browser.runtime.getURL('/assets/icons/cc-icon-white.png')})`,
         backgroundSize: 'contain',
         backgroundRepeat: 'no-repeat',
         backgroundPosition: 'center',
@@ -140,65 +117,70 @@ export function createMenu(
     });
     dropdown.addEventListener('click', (e) => e.stopPropagation());
 
-    // Display subtitle file name at top
-    if (defaults.fileName) {
-        const fileNameEl = document.createElement('div');
-        fileNameEl.textContent = `${sanitizeFileName(defaults.fileName || 'Kuraji Subtitles')}`;
-        Object.assign(fileNameEl.style, {
-            fontWeight: 'bold',
-            marginBottom: '10px',
-            fontSize: '12px',
-            color: '#ffd700',
-            textAlign: 'center',
-			background: 'rgba(0,0,0,0.5)',
-			borderRadius: '4px',
-        });
-        dropdown.appendChild(fileNameEl);
-    }
+    const fileNameEl = document.createElement('div');
+    fileNameEl.classList.add('fileName');
+    fileNameEl.textContent = `Searching for subtitles, please wait...`;
+    Object.assign(fileNameEl.style, {
+        fontWeight: 'bold',
+        marginBottom: '10px',
+        fontSize: '12px',
+        color: '#ffd700',
+        textAlign: 'center',
+        background: 'rgba(0,0,0,0.5)',
+        borderRadius: '4px',
+    });
+    dropdown.appendChild(fileNameEl);
 
     // Subtitles toggle (sliding switch)
     const toggleLabel = document.createElement('label');
-    Object.assign(toggleLabel.style, {
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        marginBottom: '10px'
-    });
-    toggleLabel.innerHTML = `
-        <span>Subtitles</span>
-        <div style="
-            position: relative;
-            width: 40px;
-            height: 20px;
-            background: #ccc;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: background 0.3s;
-        ">
-            <div style="
-                position: absolute;
-                top: 2px;
-                left: 2px;
-                width: 16px;
-                height: 16px;
-                background: white;
-                border-radius: 50%;
-                transition: left 0.3s;
-            "></div>
-        </div>
-    `;
-    const toggleSwitch = toggleLabel.querySelector('div')!;
-    const toggleKnob = toggleSwitch.querySelector('div')!;
-    let toggleState = defaults.subs;
-    toggleSwitch.addEventListener('click', () => {
-        toggleState = !toggleState;
-        toggleKnob.style.left = toggleState ? '22px' : '2px';
-        toggleSwitch.style.background = toggleState ? '#4caf50' : '#ccc';
-        toggleCallback(toggleState, subtitleOffset, subtitleColor, subtitleFontSize);
-    });
-    dropdown.appendChild(toggleLabel);
+	Object.assign(toggleLabel.style, {
+		display: 'flex',
+		alignItems: 'center',
+		gap: '10px',
+		marginBottom: '10px'
+	});
+	toggleLabel.innerHTML = `
+		<span>Subtitles</span>
+		<div style="
+			position: relative;
+			width: 40px;
+			height: 20px;
+			background: #ccc;
+			border-radius: 10px;
+			cursor: pointer;
+			transition: background 0.3s;
+		">
+			<div style="
+				position: absolute;
+				top: 2px;
+				left: 2px;
+				width: 16px;
+				height: 16px;
+				background: white;
+				border-radius: 50%;
+				transition: left 0.3s;
+			"></div>
+		</div>
+	`;
+	const toggleSwitch = toggleLabel.querySelector('div')!;
+	const toggleKnob = toggleSwitch.querySelector('div')!;
+	let toggleState = defaults.subs;
 
-	    // Container for offset display and hint button
+	function updateToggleVisual() {
+		toggleKnob.style.left = toggleState ? '22px' : '2px';
+		toggleSwitch.style.background = toggleState ? '#4caf50' : '#ccc';
+	}
+	updateToggleVisual();
+
+	toggleSwitch.addEventListener('click', () => {
+		toggleState = !toggleState;
+		updateToggleVisual();
+		toggleCallback(toggleState, subtitleOffset, subtitleColor, subtitleFontSize);
+	});
+
+	dropdown.appendChild(toggleLabel);
+
+	// Container for offset display and hint button
 	const offsetRow = document.createElement('div');
 	Object.assign(offsetRow.style, {
 		display: 'flex',
@@ -355,13 +337,17 @@ export function createMenu(
     button.addEventListener('click', (e) => {
         e.stopPropagation();
         dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+		button.style.backgroundImage = dropdown.style.display === 'none' ? `url(${browser.runtime.getURL('/assets/icons/cc-icon-white.png')})` : `url(${browser.runtime.getURL('/assets/icons/cc-icon-black.png')})`;
     });
 
     document.addEventListener('click', () => {
         dropdown.style.display = 'none';
+		button.style.backgroundImage = `url(${browser.runtime.getURL('/assets/icons/cc-icon-white.png')})`;
     });
 
     const index = 3;
     const referenceNode = parent.children[index];
     parent.insertBefore(button, referenceNode);
+
+    return button;
 }

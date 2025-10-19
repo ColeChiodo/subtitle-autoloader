@@ -10,7 +10,7 @@ function AboutPage() {
 		<div className="p-8">
 			<div className="m-4 p-8 bg-[#282828] text-[#ebdbb2] flex flex-col items-center justify-center min-h-screen">
 				<img
-					src="/assets/icons/cc-icon.png"
+					src="/assets/icons/cc-icon-white.png"
 					alt="Kurami Logo"
 					className="my-4 max-w-[100px] max-h-[100px] border-4 border-[#fabd2f]"
 				/>

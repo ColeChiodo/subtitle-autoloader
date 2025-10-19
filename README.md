@@ -23,12 +23,12 @@ I created Kuraji to automatically find and load Japanese subtitles, saving time 
 * **Video Services:** Jellyfin (future plans: YouTube, Netflix, and other platforms using video tags; long-term goal: iframe video support)
 
 ## Future Plans
-
+What I want to implement to this extension in the future. In order of most realistic:
 * Implement Chrome support.
-* Expand compatibility to other video platforms beyond Jellyfin.
-* Add support for multiple languages (requires sourcing additional subtitle databases).
+* Expand compatibility to other video platforms beyond Jellyfin (Youtube, Netflix, maybe more).
 * Support other subtitle file extensions (`.ass`).
-* Implement archive subtitle extraction (.zip, .rar, etc.).
+* Add Japanese language support for live action tv shows/movies/dramas (requires sourcing of additional subtitle databases).
+* Support Video Streaming sites that use iFrame for video embeds (will require creating custom system for syncing to video).
 
 ## How It Works
 
@@ -36,17 +36,17 @@ I created Kuraji to automatically find and load Japanese subtitles, saving time 
    Extracts title, season, episode, and year from the video filename.
 
 2. **Fetch Metadata**
-   Queries AniList for metadata, including alternative titles (romanized japanese titles, etc) and episode names.
+   Queries [AniList](https://docs.anilist.co/) and [Jikan (Unofficial MyAnimeList API)](https://jikan.moe/) for metadata, including alternative titles (romanized japanese titles, etc) and episode names.
 
 3. **Generate Title Variants**
    Creates multiple search-friendly variants of the title to maximize matching chances.
 
 4. **Fetch Subtitle Directory**
-   Sources from Japanese subtitle repositories (currently [Kitsunekko Mirror](https://github.com/Ajatt-Tools/kitsunekko-mirror)).
+   Sources from Japanese subtitle repositories (currently [Ajatt-Tools Kitsunekko Mirror](https://github.com/Ajatt-Tools/kitsunekko-mirror)).
 
 5. **Extract and Match Subtitle Files**
 
-   * Parses `.srt` files from the HTML.
+   * Parses `.srt` files from repo.
    * Tries exact season/episode match.
    * Fallback: episode title match using fuzzy search.
    * Last resort: first available subtitle.
@@ -85,7 +85,8 @@ If you want to build and run the extension yourself, you must:
 * Cross-browser compatible via webextension-polyfill
 
 ## Example Screenshots
-![](public/assets/readme/example1.png)
+![Kuraji Extension Playing on Jellyfin 1](public/assets/readme/example1.png)
+![Kuraji Extension Playing on Jellyfin 2](public/assets/readme/example2.png)
 
 ## License
 
