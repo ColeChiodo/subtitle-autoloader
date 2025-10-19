@@ -61,7 +61,7 @@ I created Kuraji to automatically find and load Japanese subtitles, saving time 
 If you want to build and run the extension yourself, you must:
 1. Clone the repository:
    ```bash
-   git clone https://github.com/
+   git clone https://github.com/ColeChiodo/subtitle-autoloader.git
    ```
 
 2. Install and build the Extension
