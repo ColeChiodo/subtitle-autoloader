@@ -62,6 +62,7 @@ If you want to build and run the extension yourself, you must:
 1. Clone the repository:
    ```bash
    git clone https://github.com/ColeChiodo/subtitle-autoloader.git
+   cd subtitle-autoloader/
    ```
 
 2. Install and build the Extension
