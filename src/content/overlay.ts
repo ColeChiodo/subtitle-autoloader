@@ -1,3 +1,5 @@
+const browser_ext = typeof browser !== "undefined" ? browser : chrome;
+
 /**
  * Initializes the overlay and subtitle span
  */
@@ -88,7 +90,7 @@ export function createMenu(
         height: '40px',
         cursor: 'pointer',
         zIndex: '999999999',
-        backgroundImage: `url(${browser.runtime.getURL('/assets/icons/cc-icon-white.png')})`,
+        backgroundImage: `url(${browser_ext.runtime.getURL('/assets/icons/cc-icon-white.png')})`,
         backgroundSize: 'contain',
         backgroundRepeat: 'no-repeat',
         backgroundPosition: 'center',
@@ -337,12 +339,12 @@ export function createMenu(
     button.addEventListener('click', (e) => {
         e.stopPropagation();
         dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
-		button.style.backgroundImage = dropdown.style.display === 'none' ? `url(${browser.runtime.getURL('/assets/icons/cc-icon-white.png')})` : `url(${browser.runtime.getURL('/assets/icons/cc-icon-black.png')})`;
+		button.style.backgroundImage = dropdown.style.display === 'none' ? `url(${browser_ext.runtime.getURL('/assets/icons/cc-icon-white.png')})` : `url(${browser_ext.runtime.getURL('/assets/icons/cc-icon-black.png')})`;
     });
 
     document.addEventListener('click', () => {
         dropdown.style.display = 'none';
-		button.style.backgroundImage = `url(${browser.runtime.getURL('/assets/icons/cc-icon-white.png')})`;
+		button.style.backgroundImage = `url(${browser_ext.runtime.getURL('/assets/icons/cc-icon-white.png')})`;
     });
 
     const index = 3;

@@ -1,6 +1,9 @@
+/// <reference types="chrome"/>
 // Imports
 import { createMenu, initSubtitles } from './overlay';
 import { parseSRTFile } from './parseSRT';
+
+const browser_ext = typeof browser !== "undefined" ? browser : chrome;
 
 const EXT = "[Kuraji]";
 
@@ -70,7 +73,7 @@ let subtitleColor = defaultSettings.color;
  * Save settings to browser storage
  */
 async function saveSettings(settings: SubtitleSettings) {
-    await browser.storage.local.set({ subtitleSettings: settings });
+    await browser_ext.storage.local.set({ subtitleSettings: settings });
     log.debug('Settings saved', settings);
 }
 
@@ -78,7 +81,7 @@ async function saveSettings(settings: SubtitleSettings) {
  * Load settings from browser storage
  */
 async function loadSettings(): Promise<SubtitleSettings> {
-    const stored = await browser.storage.local.get('subtitleSettings');
+    const stored = await browser_ext.storage.local.get('subtitleSettings');
     return stored.subtitleSettings || defaultSettings;
 }
 
@@ -174,7 +177,10 @@ async function attachOverlayToVideo(video: HTMLVideoElement) {
     if (!menu) return log.error('Failed to create menu');
 
     // Request subtitle from background script
-    const result = await browser.runtime.sendMessage({ type: 'GET_SUBS', title: title });
+    const result = await (browser_ext.runtime.sendMessage as (msg: any) => Promise<any>)({
+        type: "GET_SUBS",
+        title,
+    });
     const { text: srtText, fileName: fileName } = result as { text: string; fileName: string | null };
     if (!srtText) {
         const fileNameSpan = menu.querySelector('.fileName');
