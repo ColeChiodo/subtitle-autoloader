@@ -82,6 +82,7 @@ export function createMenu(
     let subtitleColor = defaults.color;
     let subtitleOffset = defaults.offset;
     let subtitleFontSize = defaults.fontSize;
+    let toggleState = defaults.subs;
 
     const button = document.createElement('div');
     button.classList.add('kuraji-menu-button');
@@ -119,6 +120,7 @@ export function createMenu(
     });
     dropdown.addEventListener('click', (e) => e.stopPropagation());
 
+    // File name display
     const fileNameEl = document.createElement('div');
     fileNameEl.classList.add('fileName');
     fileNameEl.textContent = `Searching for subtitles, please wait...`;
@@ -133,125 +135,121 @@ export function createMenu(
     });
     dropdown.appendChild(fileNameEl);
 
-    // Subtitles toggle (sliding switch)
+    // --- Subtitles toggle ---
     const toggleLabel = document.createElement('label');
-	Object.assign(toggleLabel.style, {
-		display: 'flex',
-		alignItems: 'center',
-		gap: '10px',
-		marginBottom: '10px'
-	});
-	toggleLabel.innerHTML = `
-		<span>Subtitles</span>
-		<div style="
-			position: relative;
-			width: 40px;
-			height: 20px;
-			background: #ccc;
-			border-radius: 10px;
-			cursor: pointer;
-			transition: background 0.3s;
-		">
-			<div style="
-				position: absolute;
-				top: 2px;
-				left: 2px;
-				width: 16px;
-				height: 16px;
-				background: white;
-				border-radius: 50%;
-				transition: left 0.3s;
-			"></div>
-		</div>
-	`;
-	const toggleSwitch = toggleLabel.querySelector('div')!;
-	const toggleKnob = toggleSwitch.querySelector('div')!;
-	let toggleState = defaults.subs;
+    Object.assign(toggleLabel.style, {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        marginBottom: '10px'
+    });
 
-	function updateToggleVisual() {
-		toggleKnob.style.left = toggleState ? '22px' : '2px';
-		toggleSwitch.style.background = toggleState ? '#4caf50' : '#ccc';
-	}
-	updateToggleVisual();
+    const toggleText = document.createElement('span');
+    toggleText.textContent = 'Subtitles';
 
-	toggleSwitch.addEventListener('click', () => {
-		toggleState = !toggleState;
-		updateToggleVisual();
-		toggleCallback(toggleState, subtitleOffset, subtitleColor, subtitleFontSize);
-	});
+    const toggleSwitch = document.createElement('div');
+    Object.assign(toggleSwitch.style, {
+        position: 'relative',
+        width: '40px',
+        height: '20px',
+        background: '#ccc',
+        borderRadius: '10px',
+        cursor: 'pointer',
+        transition: 'background 0.3s'
+    });
 
-	dropdown.appendChild(toggleLabel);
+    const toggleKnob = document.createElement('div');
+    Object.assign(toggleKnob.style, {
+        position: 'absolute',
+        top: '2px',
+        left: '2px',
+        width: '16px',
+        height: '16px',
+        background: 'white',
+        borderRadius: '50%',
+        transition: 'left 0.3s'
+    });
 
-	// Container for offset display and hint button
-	const offsetRow = document.createElement('div');
-	Object.assign(offsetRow.style, {
-		display: 'flex',
-		justifyContent: 'space-between', // display on opposite sides
-		alignItems: 'center',            // vertically center
-		marginBottom: '8px'
-	});
+    toggleSwitch.appendChild(toggleKnob);
+    toggleLabel.appendChild(toggleText);
+    toggleLabel.appendChild(toggleSwitch);
 
-	// Offset display
-	const offsetDisplay = document.createElement('div');
-	offsetDisplay.textContent = `Offset: ${subtitleOffset}ms`;
-	Object.assign(offsetDisplay.style, {
-		fontWeight: 'bold'
-	});
-	offsetRow.appendChild(offsetDisplay);
+    function updateToggleVisual() {
+        toggleKnob.style.left = toggleState ? '22px' : '2px';
+        toggleSwitch.style.background = toggleState ? '#4caf50' : '#ccc';
+    }
+    updateToggleVisual();
 
-	// Hint button
-	const hintBtn = document.createElement('div');
-	hintBtn.textContent = '?';
-	Object.assign(hintBtn.style, {
-		display: 'inline-block',
-		cursor: 'default',
-		border: '1px solid #555',
-		borderRadius: '50%',
-		width: '18px',
-		height: '18px',
-		textAlign: 'center',
-		lineHeight: '16px',
-		fontSize: '12px',
-		position: 'relative',
-		userSelect: 'none'
-	});
+    toggleSwitch.addEventListener('click', () => {
+        toggleState = !toggleState;
+        updateToggleVisual();
+        toggleCallback(toggleState, subtitleOffset, subtitleColor, subtitleFontSize);
+    });
 
-	// Tooltip
-	const tooltip = document.createElement('div');
-	tooltip.textContent = 'If subtitles appear before audio is played, decrease the offset.';
-	Object.assign(tooltip.style, {
-		position: 'absolute',
-		bottom: '24px',
-		left: '50%',
-		transform: 'translateX(-50%)',
-		background: '#222',
-		color: 'white',
-		padding: '4px 8px',
-		borderRadius: '4px',
-		whiteSpace: 'nowrap',
-		fontSize: '12px',
-		display: 'none',
-		zIndex: '100'
-	});
-	hintBtn.appendChild(tooltip);
+    dropdown.appendChild(toggleLabel);
 
-	hintBtn.addEventListener('mouseenter', () => tooltip.style.display = 'block');
-	hintBtn.addEventListener('mouseleave', () => tooltip.style.display = 'none');
+    // --- Offset Row ---
+    const offsetRow = document.createElement('div');
+    Object.assign(offsetRow.style, {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '8px'
+    });
 
-	offsetRow.appendChild(hintBtn);
+    const offsetDisplay = document.createElement('div');
+    offsetDisplay.textContent = `Offset: ${subtitleOffset}ms`;
+    Object.assign(offsetDisplay.style, { fontWeight: 'bold' });
+    offsetRow.appendChild(offsetDisplay);
 
-	// Add the row to the dropdown
-	dropdown.appendChild(offsetRow);
+    const hintBtn = document.createElement('div');
+    hintBtn.textContent = '?';
+    Object.assign(hintBtn.style, {
+        display: 'inline-block',
+        cursor: 'default',
+        border: '1px solid #555',
+        borderRadius: '50%',
+        width: '18px',
+        height: '18px',
+        textAlign: 'center',
+        lineHeight: '16px',
+        fontSize: '12px',
+        position: 'relative',
+        userSelect: 'none'
+    });
 
-    // Offset buttons
-    const offsets = [ -1, +1, -10, +10, -100, +100, -1000, +1000];
+    const tooltip = document.createElement('div');
+    tooltip.textContent = 'If subtitles appear before audio is played, decrease the offset.';
+    Object.assign(tooltip.style, {
+        position: 'absolute',
+        bottom: '24px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        background: '#222',
+        color: 'white',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        whiteSpace: 'nowrap',
+        fontSize: '12px',
+        display: 'none',
+        zIndex: '100'
+    });
+
+    hintBtn.appendChild(tooltip);
+    hintBtn.addEventListener('mouseenter', () => tooltip.style.display = 'block');
+    hintBtn.addEventListener('mouseleave', () => tooltip.style.display = 'none');
+    offsetRow.appendChild(hintBtn);
+    dropdown.appendChild(offsetRow);
+
+    // --- Offset Buttons ---
+    const offsets = [-1, +1, -10, +10, -100, +100, -1000, +1000];
     const btnContainer = document.createElement('div');
     Object.assign(btnContainer.style, {
-		display: 'grid',
-		gridTemplateColumns: 'repeat(2, 1fr)', // 2 columns
-		gap: '4px',
-		marginBottom: '10px'
-	});
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 1fr)',
+        gap: '4px',
+        marginBottom: '10px'
+    });
 
     offsets.forEach(val => {
         const btn = document.createElement('button');
@@ -275,7 +273,7 @@ export function createMenu(
     });
     dropdown.appendChild(btnContainer);
 
-    // Color picker
+    // --- Color Picker ---
     const colorInput = document.createElement('input');
     colorInput.type = 'color';
     colorInput.value = subtitleColor;
@@ -293,58 +291,66 @@ export function createMenu(
     });
     dropdown.appendChild(colorInput);
 
-	//allow edit fontsize with -1 +1 buttons
-	const fontSizeRow = document.createElement('div');
-	Object.assign(fontSizeRow.style, {
-		display: 'flex',
-		justifyContent: 'space-between', // display on opposite sides
-		alignItems: 'center',            // vertically center
-		marginBottom: '8px'
-	});
+    // --- Font Size Controls ---
+    const fontSizeRow = document.createElement('div');
+    Object.assign(fontSizeRow.style, {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '8px'
+    });
 
-	const fontSizeDisplay = document.createElement('div');
-	fontSizeDisplay.textContent = `Font Size: ${subtitleFontSize}px`;
-	Object.assign(fontSizeDisplay.style, {
-		fontWeight: 'bold'
-	});
-	fontSizeRow.appendChild(fontSizeDisplay);
+    const fontSizeDisplay = document.createElement('div');
+    fontSizeDisplay.textContent = `Font Size: ${subtitleFontSize}px`;
+    Object.assign(fontSizeDisplay.style, { fontWeight: 'bold' });
+    fontSizeRow.appendChild(fontSizeDisplay);
 
-	// Add the row to the dropdown
-	dropdown.appendChild(fontSizeRow);
+    const fontMinus = document.createElement('button');
+    fontMinus.textContent = '-1';
+    const fontPlus = document.createElement('button');
+    fontPlus.textContent = '+1';
 
-	const fontSizeButtons = [ -1, +1];
-	fontSizeButtons.forEach(val => {
-		const btn = document.createElement('button');
-		btn.textContent = (val > 0 ? '+' : '') + val;
-		Object.assign(btn.style, {
-			flex: '1 0 25%',
-			padding: '4px 0',
-			background: '#333',
-			color: 'white',
-			border: 'none',
-			borderRadius: '4px',
-			cursor: 'pointer',
-			fontSize: '12px'
-		});
-		btn.addEventListener('click', () => {
-			subtitleFontSize += val;
-			fontSizeDisplay.textContent = `Font Size: ${subtitleFontSize}px`;
-			toggleCallback(toggleState, subtitleOffset, subtitleColor, subtitleFontSize);
-		});
-		fontSizeRow.appendChild(btn);
-	});
+    [fontMinus, fontPlus].forEach(btn => {
+        Object.assign(btn.style, {
+            flex: '1 0 25%',
+            padding: '4px 0',
+            background: '#333',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '12px'
+        });
+        fontSizeRow.appendChild(btn);
+    });
 
+    fontMinus.addEventListener('click', () => {
+        subtitleFontSize -= 1;
+        fontSizeDisplay.textContent = `Font Size: ${subtitleFontSize}px`;
+        toggleCallback(toggleState, subtitleOffset, subtitleColor, subtitleFontSize);
+    });
+    fontPlus.addEventListener('click', () => {
+        subtitleFontSize += 1;
+        fontSizeDisplay.textContent = `Font Size: ${subtitleFontSize}px`;
+        toggleCallback(toggleState, subtitleOffset, subtitleColor, subtitleFontSize);
+    });
+
+    dropdown.appendChild(fontSizeRow);
+
+    // --- Button click behavior ---
     button.appendChild(dropdown);
-
     button.addEventListener('click', (e) => {
         e.stopPropagation();
-        dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
-		button.style.backgroundImage = dropdown.style.display === 'none' ? `url(${browser_ext.runtime.getURL('/assets/icons/cc-icon-white.png')})` : `url(${browser_ext.runtime.getURL('/assets/icons/cc-icon-black.png')})`;
+        const isHidden = dropdown.style.display === 'none';
+        dropdown.style.display = isHidden ? 'block' : 'none';
+        button.style.backgroundImage = isHidden
+            ? `url(${browser_ext.runtime.getURL('/assets/icons/cc-icon-black.png')})`
+            : `url(${browser_ext.runtime.getURL('/assets/icons/cc-icon-white.png')})`;
     });
 
     document.addEventListener('click', () => {
         dropdown.style.display = 'none';
-		button.style.backgroundImage = `url(${browser_ext.runtime.getURL('/assets/icons/cc-icon-white.png')})`;
+        button.style.backgroundImage = `url(${browser_ext.runtime.getURL('/assets/icons/cc-icon-white.png')})`;
     });
 
     const index = 3;
