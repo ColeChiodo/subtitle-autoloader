@@ -14,6 +14,7 @@ To use the extension. You must do the following:
       * One single anime episode lookup *could* use 20+ requests.
 2. **Open your favorite video streaming site**
 3. **(Optional)** Pair with a Japanese Popup Dictionary like [Yomitan](https://yomitan.wiki/) to assist in your language learning.
+   * Which can also be used for [Anki](https://apps.ankiweb.net/) flashcard support
 
 ## Motivation
 
