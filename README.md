@@ -115,7 +115,7 @@ If you want to build and run the extension yourself, you must:
 ## Example Screenshots
 ![Kuraji Extension Playing on Jellyfin 1](public/assets/readme/example1.png)
 ![Kuraji Extension Playing on Jellyfin 2](public/assets/readme/example2.png)
-
+![Kuraji Extension Playing on Jellyfin 3](public/assets/readme/example3.png)
 
 ## License
 
