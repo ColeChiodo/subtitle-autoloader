@@ -40,11 +40,12 @@ I created Kuraji to automatically find and load Japanese subtitles, saving time 
 * **Video Services:** Jellyfin
 
 ## Future Plans
-What I want to implement to this extension in the future. In order of most realistic:
+What I want to implement to this extension in the future.:
 * Expand compatibility to other video platforms beyond Jellyfin (Youtube, Netflix, maybe more).
 * Support other subtitle file extensions (`.ass`).
+* Fix iFrame site quirks (fullscreen, etc)
 * Add Japanese language support for live action tv shows/movies/dramas (requires sourcing of additional subtitle databases).
-* Support Video Streaming sites that use iFrame for video embeds (will require creating custom system for syncing to video).
+   * Not High Priority, because sites that offer live action shows/movies already provide Japanese subtitles, for the most part.
 
 ## How It Works
 
