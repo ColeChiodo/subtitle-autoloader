@@ -83,6 +83,7 @@ async function getAllEpisodesMAL(malId: number) {
             title: ep.title
         })));
         morePages = !!json.pagination.has_next_page;
+        log.debug(`Fetched ${episodes.length} episodes for MAL ID ${malId}`);
         page++;
     }
 
@@ -151,6 +152,11 @@ export function generateTitleVariants(parsed: ParsedTitle, meta: AnimeMetadata):
         candidates.add(base.replace(/\s+/g, "."));
         candidates.add(base.replace(/\s+/g, "_"));
         candidates.add(base.toLowerCase());
+
+        // add varient without last character
+        if (base.length > 1) {
+            candidates.add(base.slice(0, -1));
+        }
     };
 
     add(parsed.title);
@@ -249,35 +255,64 @@ async function matchSubtitleFile(
     log.debug(`Matching subtitle file for title: ${parsed.title}`);
     if (files.length === 0) return null;
 
+    // Direct season + episode match
     if (parsed.season && parsed.episode) {
-        const regex = new RegExp(`S0?${parsed.season}E0?${parsed.episode}`, "i");
+        const regex = new RegExp(`S0*${parsed.season}E0*${parsed.episode}(?!\\d)`, "i");
         const direct = files.find(f => regex.test(f.name));
-        if (direct) return direct;
-    }
-
-    const candidates = files.map(f => f.name.toLowerCase());
-    const searcher = new Searcher(candidates, { returnMatchData: false, threshold: 0.7 });
-
-    if (!meta.malId) return files[0];
-    const episodes = await getAllEpisodesMAL(meta.malId);
-
-    if (episodes && episodes.length > 0 && parsed.episodeTitle) {
-        const metaMatch = episodes.find(ep => ep.title?.toLowerCase().includes(parsed.episodeTitle!.toLowerCase()));
-        if (metaMatch) {
-            const regex = new RegExp(`E0*${metaMatch.number}(?!\\d)`, "i");
-            const byNum = files.find(f => regex.test(f.name));
-            if (byNum) return byNum;
+        if (direct) {
+            log.debug(`Found direct season+episode match: ${direct.name}`);
+            return direct;
         }
     }
 
+    // Episode-only match (allow optional season prefix)
+    if (!parsed.season && parsed.episode) {
+        // Match E03, 03, S01E03 as separate number tokens
+        const epNum = parsed.episode.toString().padStart(1, '0'); // "3" => "3" or "03" optional
+        const regex = new RegExp(`(?:S\\d+E)?0*${epNum}(?!\\d)`, "i");
+        const direct = files.find(f => regex.test(f.name));
+        if (direct) {
+            log.debug(`Found direct episode-only match (with optional season prefix): ${direct.name}`);
+            return direct;
+        }
+    }
+
+    // Episode title match via MAL metadata
+    if (parsed.episodeTitle && meta.malId) {
+        const episodes = await getAllEpisodesMAL(meta.malId);
+        if (episodes && episodes.length > 0) {
+            const metaMatch = episodes.find(ep =>
+                ep.title?.toLowerCase().includes(parsed.episodeTitle!.toLowerCase())
+            );
+            if (metaMatch) {
+                const regex = new RegExp(`(?:S0*\\d+)?(?:E0*)?${metaMatch.number}(?!\\d)`, "i");
+                const byNum = files.find(f => regex.test(f.name));
+                if (byNum) {
+                    log.debug(`Found episode-title match: ${byNum.name}`);
+                    return byNum;
+                }
+            }
+        }
+    }
+
+    // Fuzzy search on title
+    const candidates = files.map(f => f.name.toLowerCase());
+    const searcher = new Searcher(candidates, { returnMatchData: false, threshold: 0.7 });
     const best = searcher.search(parsed.title.toLowerCase())[0];
     if (best) {
         const fallback = files.find(f => f.name.toLowerCase() === best);
-        if (fallback) return fallback;
+        if (fallback) {
+            log.debug(`Found fallback match: ${fallback.name}`);
+            return fallback;
+        }
     }
 
+    // Default fallback
+    log.debug(`Returning first file: ${files[0].name}`);
     return files[0];
 }
+
+
 
 /**
  * Fetch subtitle file content

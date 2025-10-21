@@ -1,52 +1,22 @@
 /// <reference types="chrome"/>
 // Imports
+import { log, sanitizeFileName, parseVideoTitle } from './helpers';
+import { loadSettings, saveSettings } from './storage';
 import { createMenu, initSubtitles } from './overlay';
 import { parseSRTFile } from './parseSRT';
 
 const browser_ext = typeof browser !== "undefined" ? browser : chrome;
 
-const EXT = "[Kuraji]";
-
-/**
- * Custom logger to prefix logs with the extension name.
- */
-const log = {
-    info: (msg: string, ...args: any[]) => console.log(`${EXT} [INFO]`, msg, ...args),
-    debug: (msg: string, ...args: any[]) => console.debug(`${EXT} [DEBUG]`, msg, ...args),
-    warn: (msg: string, ...args: any[]) => console.warn(`${EXT} [WARN]`, msg, ...args),
-    error: (msg: string, ...args: any[]) => console.error(`${EXT} [ERROR]`, msg, ...args),
-};
-
-/**
- * Turn a file name in url format into a human-readable string
- * @param rawName 
- * @returns 
- */
-function sanitizeFileName(rawName: string): string {
-    try {
-        // Decode URL-encoded characters
-        let name = decodeURIComponent(rawName);
-
-        // Optional: remove any leading/trailing whitespace
-        name = name.trim();
-
-        // Optional: replace brackets with normal parentheses, just for display
-        name = name.replace(/\[/g, '(').replace(/\]/g, ')');
-
-        // Optional: remove any non-printable/control characters
-        name = name.replace(/[\x00-\x1F\x7F]/g, '');
-
-        return name;
-    } catch (e) {
-        // If decoding fails, fallback to the raw string
-        return rawName;
-    }
-}
-
 let currentOverlay: HTMLElement | null = null;
-let currentVideo: HTMLVideoElement | null = null;
+let currentVideo: HTMLVideoElement | HTMLIFrameElement | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let watching = false;
+
+interface Subtitle {
+	start: number;
+	end: number;
+	text: string;
+}
 
 // Default settings
 interface SubtitleSettings {
@@ -70,141 +40,129 @@ let fontSize = defaultSettings.fontSize;
 let subtitleColor = defaultSettings.color;
 
 /**
- * Save settings to browser storage
- */
-async function saveSettings(settings: SubtitleSettings) {
-    await browser_ext.storage.local.set({ subtitleSettings: settings });
-    log.debug('Settings saved', settings);
-}
-
-/**
- * Load settings from browser storage
- */
-async function loadSettings(): Promise<SubtitleSettings> {
-    const stored = await browser_ext.storage.local.get('subtitleSettings');
-    return stored.subtitleSettings || defaultSettings;
-}
-
-/**
  * Attaches the overlay to a video.
  * @param video 
  */
-async function attachOverlayToVideo(video: HTMLVideoElement) {
+async function attachOverlay(
+    media: HTMLVideoElement | HTMLIFrameElement,
+    getTitle: () => string | null,
+    getButtonsContainer: (media: HTMLVideoElement | HTMLIFrameElement) => HTMLElement | null,
+    getSearchQuery?: (title: string | null) => any
+) {
     cleanupOverlay();
 
-    // Load saved settings
     const settings = await loadSettings();
     subsEnabled = settings.subsEnabled;
     subtitleOffset = settings.offset;
     fontSize = settings.fontSize;
     subtitleColor = settings.color;
 
-    // Get video title from somewhere on the page
-    const titleEl = document.querySelector('.pageTitle');
-    if (!titleEl) return log.error('No title found');
-    const title = titleEl.textContent;
-
     const overlay = initSubtitles(subsEnabled ? { subs: true } : { subs: false });
     if (!overlay) return log.error('Failed to create subtitle overlay');
 
     currentOverlay = overlay;
-    currentVideo = video;
+    currentVideo = media;
 
     const span = overlay.querySelector('span')!;
     span.style.color = subtitleColor;
     span.style.fontSize = `${fontSize}px`;
 
     function updateOverlayPosition() {
-        const rect = video.getBoundingClientRect();
-        if (!overlay) return;
-        overlay.style.top = `${rect.top + rect.height * 0.85}px`;
-        overlay.style.left = `${rect.left + rect.width / 2}px`;
-        overlay.style.transform = 'translate(-50%, -50%)';
+        const rect = media.getBoundingClientRect();
+        if (overlay) {
+            overlay.style.top = `${rect.top + rect.height * 0.85}px`;
+            overlay.style.left = `${rect.left + rect.width / 2}px`;
+            overlay.style.transform = 'translate(-50%, -50%)';
+        }
     }
     updateOverlayPosition();
 
     resizeObserver = new ResizeObserver(updateOverlayPosition);
-    resizeObserver.observe(video);
+    resizeObserver.observe(media);
     window.addEventListener('resize', updateOverlayPosition);
     window.addEventListener('scroll', updateOverlayPosition);
 
-    // Get location of where menu button should go
-    const osdControlsList = document.querySelectorAll<HTMLDivElement>('.osdControls');
-    if (!osdControlsList.length) return;
-    const osdControls = osdControlsList[osdControlsList.length - 1];
-    const buttonsContainerList = osdControls.querySelectorAll<HTMLDivElement>('.buttons');
-    if (!buttonsContainerList.length) return;
-    const buttonsContainer = buttonsContainerList[buttonsContainerList.length - 1];
+    const buttonsContainer = getButtonsContainer(media);
+    if (!buttonsContainer) return log.error('Buttons container not found');
 
-    // Pass the fileName to createMenu for display
+    const title = getTitle?.() || '';
+    const searchQuery = getSearchQuery ? getSearchQuery(title) : {};
+
+    let subtitles: Subtitle[] = [];
+    let lastSubtitle = '';
+
     const menu = createMenu(
         buttonsContainer,
-        { subs: subsEnabled, offset: subtitleOffset, color: subtitleColor, fontSize },
+        { subs: subsEnabled, offset: subtitleOffset, color: subtitleColor, fontSize, search: searchQuery },
         async (subs, offset, color, fontS) => {
             let updated = false;
 
-            if (subsEnabled !== subs) {
-                subsEnabled = subs;
-                log.debug(`Subtitles ${subs ? 'enabled' : 'disabled'}`);
-                updated = true;
-            }
-            if (subtitleOffset !== offset) {
-                subtitleOffset = offset;
-                log.debug(`Subtitle offset set to ${subtitleOffset}`);
-                updated = true;
-            }
-            if (subtitleColor !== color) {
-                subtitleColor = color;
-                log.debug(`Subtitle color set to ${subtitleColor}`);
-                updated = true;
-            }
-            if (fontSize !== fontS) {
-                fontSize = fontS;
-                log.debug(`Subtitle font size set to ${fontSize}`);
-                updated = true;
-            }
+            if (subsEnabled !== subs) { subsEnabled = subs; updated = true; }
+            if (subtitleOffset !== offset) { subtitleOffset = offset; updated = true; }
+            if (subtitleColor !== color) { subtitleColor = color; updated = true; }
+            if (fontSize !== fontS) { fontSize = fontS; updated = true; }
 
-            // Save updated settings
-            if (updated) {
-                await saveSettings({ subsEnabled, offset: subtitleOffset, fontSize, color: subtitleColor });
-            }
+            if (updated) await saveSettings({ subsEnabled, offset: subtitleOffset, fontSize, color: subtitleColor });
 
             overlay.style.display = subsEnabled ? 'flex' : 'none';
             span.style.color = subtitleColor;
             span.style.fontSize = `${fontSize}px`;
+        },
+        async (queryObj) => {
+            if (!menu) return log.error('Menu not found');
+
+            // Convert search query object into a string
+            let query = queryObj.animeTitle;
+            if (queryObj.season) query += ` - S${queryObj.season}E${queryObj.episodeNumber}`;
+            else if (queryObj.episodeNumber) query += ` - E${queryObj.episodeNumber}`;
+            if (queryObj.episodeTitle) query += ` - ${queryObj.episodeTitle}`;
+
+            const result = await (browser_ext.runtime.sendMessage as (msg: any) => Promise<any>)({
+                type: "GET_SUBS",
+                title: query,
+            });
+
+            const { text: srtText, fileName } = result as { text: string; fileName: string | null };
+            if (!srtText) {
+                const fileNameSpan = menu.querySelector('.fileName');
+                if (fileNameSpan) fileNameSpan.textContent = 'No subtitles found';
+                return log.error('No subtitles found');
+            }
+
+            subtitles = parseSRTFile(srtText);
+            const fileNameSpan = menu.querySelector('.fileName');
+            if (fileNameSpan) fileNameSpan.textContent = `${sanitizeFileName(fileName || 'Kuraji Subtitles')}` || 'No subtitles found';
+
+            // Video time updates
+            if (media instanceof HTMLVideoElement) {
+                media.addEventListener('timeupdate', () => {
+                    if (!subsEnabled) return;
+                    const currentTime = media.currentTime + (subtitleOffset / 1000);
+                    const current = subtitles.find(s => currentTime >= s.start && currentTime <= s.end);
+                    const text = current ? current.text : '';
+                    span.textContent = text;
+                    span.style.color = subtitleColor;
+                    if (text !== lastSubtitle) lastSubtitle = text;
+                });
+            } else {
+                // Iframe: listen for postMessage events with time
+                window.addEventListener('message', (event) => {
+                    if (!subsEnabled) return;
+                    try {
+                        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                        if (!data?.event || typeof data.time !== 'number') return;
+
+                        const currentTime = data.time + (subtitleOffset / 1000);
+                        const current = subtitles.find(s => currentTime >= s.start && currentTime <= s.end);
+                        const text = current ? current.text : '';
+                        span.textContent = text;
+                        span.style.color = subtitleColor;
+                        if (text !== lastSubtitle) lastSubtitle = text;
+                    } catch (err) { }
+                });
+            }
         }
     );
-    if (!menu) return log.error('Failed to create menu');
-
-    // Request subtitle from background script
-    const result = await (browser_ext.runtime.sendMessage as (msg: any) => Promise<any>)({
-        type: "GET_SUBS",
-        title,
-    });
-    const { text: srtText, fileName: fileName } = result as { text: string; fileName: string | null };
-    if (!srtText) {
-        const fileNameSpan = menu.querySelector('.fileName');
-        if (fileNameSpan) fileNameSpan.textContent = 'No subtitles found';
-        return log.error('No subtitles found');
-    } 
-
-    // Parse subtitle file
-    const subtitles = parseSRTFile(srtText);
-
-    // Put filename in menu child with class fileName
-    const fileNameSpan = menu.querySelector('.fileName');
-    if (fileNameSpan) fileNameSpan.textContent = `${sanitizeFileName(fileName || 'Kuraji Subtitles')}` || 'No subtitles found';
-
-    let lastSubtitle = '';
-    video.addEventListener('timeupdate', () => {
-        if (!subsEnabled) return;
-        const currentTime = video.currentTime + (subtitleOffset / 1000);
-        const current = subtitles.find(s => currentTime >= s.start && currentTime <= s.end);
-        const text = current ? current.text : '';
-        span.textContent = text;
-        span.style.color = subtitleColor;
-        if (text !== lastSubtitle) lastSubtitle = text;
-    });
 }
 
 /**
@@ -234,7 +192,17 @@ async function handleJellyfin() {
 
     const video = document.querySelector('video');
     if (video && video !== currentVideo) {
-        await attachOverlayToVideo(video);
+        await attachOverlay(
+            video,
+            () => document.querySelector('.pageTitle')!.textContent,
+            (_video) => {
+                const osdControls = document.querySelectorAll<HTMLDivElement>('.osdControls');
+                if (!osdControls.length) return null;
+                const buttonsContainer = osdControls[osdControls.length - 1].querySelectorAll<HTMLDivElement>('.buttons');
+                return buttonsContainer[buttonsContainer.length - 1] || null;
+            },
+            (title) => parseVideoTitle(title || '')
+        );
     }
 }
 
@@ -256,12 +224,47 @@ function watchJellyfin() {
 }
 
 /**
+ * Handles navigation within Hianime.
+ * If navigating to an iframe, attach listener for video time messages.
+ */
+async function handleIFrame(iframe: HTMLIFrameElement) {
+    if (watching) return;
+    log.debug('handling iframe');
+
+    if (iframe && iframe !== currentVideo) {
+        await attachOverlay(
+            iframe,
+            () => '',
+            (iframe) => {
+                const container = document.createElement('div');
+                container.classList.add('kuraji-buttons');
+                Object.assign(container.style, {
+                    position: 'absolute',
+                    bottom: '0',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: '999999999'
+                });
+                iframe.parentNode?.insertBefore(container, iframe.nextSibling);
+                return container;
+            }
+        );
+    }
+}
+
+/**
  * Initialize - checks the current page to handle events differently
  */
 async function init() {
     if (document.title.toLowerCase().includes('jellyfin')) {
-        log.debug('Detected Jellyfin web client');
+        log.info('Detected Jellyfin web client');
         watchJellyfin();
+    } 
+
+    const iframe = document.querySelector('iframe');
+    if (iframe) {
+        log.info('iframe detected:', iframe.src);
+        handleIFrame(iframe as HTMLIFrameElement);
     }
 }
 
