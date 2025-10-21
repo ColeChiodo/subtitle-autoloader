@@ -5,7 +5,7 @@ const browser_ext = typeof browser !== "undefined" ? browser : chrome;
  */
 export function initSubtitles(defaults: { subs: boolean; }) {
     const existing = document.querySelector('.kuraji-subtitles');
-    if (existing) return;
+    if (existing) return null;
 
     const overlay = document.createElement('div');
     overlay.classList.add('kuraji-subtitles');
@@ -69,12 +69,18 @@ export function initSubtitles(defaults: { subs: boolean; }) {
 }
 
 /**
- * Creates the menu with toggle, offset buttons, and color options
+ * Creates the menu with toggle, offset buttons, color options, and a search form
  */
 export function createMenu(
     parent: HTMLElement,
-    defaults: { subs: boolean; offset: number; color: string; fontSize: number; },
-    toggleCallback: (subs: boolean, offset: number, color: string, fontSize: number) => void
+    defaults: { subs: boolean; offset: number; color: string; fontSize: number; search: { title?: string; season?: number; episode?: number; episodeTitle?: string; }; },
+    toggleCallback: (subs: boolean, offset: number, color: string, fontSize: number) => void,
+    searchCallback: (searchquery: {
+        animeTitle: string;
+        season?: string;
+        episodeNumber?: string;
+        episodeTitle?: string;
+    }) => void
 ) {
     const existing = document.querySelector('.kuraji-menu-button');
     if (existing) return;
@@ -113,17 +119,98 @@ export function createMenu(
         padding: '12px',
         borderRadius: '8px',
         display: 'none',
-        minWidth: '220px',
+        minWidth: '240px',
         boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
         fontFamily: 'Arial, sans-serif',
         fontSize: '14px'
     });
     dropdown.addEventListener('click', (e) => e.stopPropagation());
 
-    // File name display
+    // --- Search Form ---
+    const form = document.createElement('form');
+    Object.assign(form.style, {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+        marginBottom: '10px'
+    });
+
+    const makeInput = (defaultValue: string, placeholder: string, name: string, required = false) => {
+        const input = document.createElement('input');
+        input.value = defaultValue;
+        input.placeholder = placeholder;
+        input.name = name;
+        input.required = required;
+        Object.assign(input.style, {
+            padding: '4px 6px',
+            borderRadius: '4px',
+            border: '1px solid #444',
+            background: '#111',
+            color: 'white',
+            fontSize: '13px'
+        });
+        return input;
+    };
+
+    const titleInput = makeInput(defaults.search.title || '', 'Anime title *', 'animeTitle', true);
+    const seasonInput = makeInput(defaults.search.season?.toString() || '', 'Season (optional)', 'season');
+    const episodeInput = makeInput(defaults.search.episode?.toString() || '', 'Episode number (optional)', 'episodeNumber');
+    const epTitleInput = makeInput(defaults.search.episodeTitle || '', 'Episode title (optional)', 'episodeTitle');
+
+    // Prevent global keyboard shortcuts while typing in any of these fields
+    [titleInput, seasonInput, episodeInput, epTitleInput].forEach((el) => {
+        el.addEventListener('keydown', (e) => e.stopPropagation());
+        el.addEventListener('keyup', (e) => e.stopPropagation());
+        el.addEventListener('keypress', (e) => e.stopPropagation());
+    });
+
+
+    const searchBtn = document.createElement('button');
+    searchBtn.type = 'submit';
+    searchBtn.textContent = 'Search';
+    Object.assign(searchBtn.style, {
+        background: '#4caf50',
+        color: 'white',
+        border: 'none',
+        borderRadius: '4px',
+        padding: '6px 0',
+        cursor: 'pointer',
+        fontWeight: 'bold',
+        fontSize: '13px',
+        marginTop: '2px'
+    });
+
+    form.append(titleInput, seasonInput, episodeInput, epTitleInput, searchBtn);
+    dropdown.appendChild(form);
+
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+
+        const animeTitle = titleInput.value.trim();
+        const season = seasonInput.value.trim();
+        const episodeNumber = episodeInput.value.trim();
+        const episodeTitle = epTitleInput.value.trim();
+
+        if (!animeTitle) {
+            alert('Anime title is required.');
+            return;
+        }
+        if (!episodeNumber && !episodeTitle) {
+            alert('You must provide either an episode number or an episode title.');
+            return;
+        }
+
+        const searchquery = { animeTitle, season, episodeNumber, episodeTitle };
+        console.log('Search Query:', searchquery);
+
+        fileNameEl.textContent = 'Searching for subtitles, please wait...';
+
+        if (searchCallback) searchCallback(searchquery);
+    });
+
     const fileNameEl = document.createElement('div');
     fileNameEl.classList.add('fileName');
-    fileNameEl.textContent = `Searching for subtitles, please wait...`;
+    fileNameEl.textContent = `Please click Search to find subtitles`;
     Object.assign(fileNameEl.style, {
         fontWeight: 'bold',
         marginBottom: '10px',
@@ -143,10 +230,8 @@ export function createMenu(
         gap: '10px',
         marginBottom: '10px'
     });
-
     const toggleText = document.createElement('span');
     toggleText.textContent = 'Subtitles';
-
     const toggleSwitch = document.createElement('div');
     Object.assign(toggleSwitch.style, {
         position: 'relative',
@@ -157,7 +242,6 @@ export function createMenu(
         cursor: 'pointer',
         transition: 'background 0.3s'
     });
-
     const toggleKnob = document.createElement('div');
     Object.assign(toggleKnob.style, {
         position: 'absolute',
@@ -169,7 +253,6 @@ export function createMenu(
         borderRadius: '50%',
         transition: 'left 0.3s'
     });
-
     toggleSwitch.appendChild(toggleKnob);
     toggleLabel.appendChild(toggleText);
     toggleLabel.appendChild(toggleSwitch);
@@ -179,13 +262,11 @@ export function createMenu(
         toggleSwitch.style.background = toggleState ? '#4caf50' : '#ccc';
     }
     updateToggleVisual();
-
     toggleSwitch.addEventListener('click', () => {
         toggleState = !toggleState;
         updateToggleVisual();
         toggleCallback(toggleState, subtitleOffset, subtitleColor, subtitleFontSize);
     });
-
     dropdown.appendChild(toggleLabel);
 
     // --- Offset Row ---
