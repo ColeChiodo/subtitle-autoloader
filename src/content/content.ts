@@ -29,8 +29,8 @@ interface SubtitleSettings {
 const defaultSettings: SubtitleSettings = {
     subsEnabled: false,
     offset: 0,
-    fontSize: 25,
-    color: 'yellow',
+    fontSize: 35,
+    color: 'white',
 };
 
 // Current settings
@@ -225,6 +225,8 @@ function watchJellyfin() {
         if (onVideoPage && video && video !== currentVideo) {
             cleanupOverlay();
             handleJellyfin();
+        } else if (!onVideoPage) {
+            cleanupOverlay();
         }
     });
     observer.observe(document.body, { childList: true, subtree: true });
@@ -240,8 +242,6 @@ async function handleYoutube() {
         return;
     }
 
-    // Try to pick the canonical video element; YouTube sometimes moves things around,
-    // so try a couple of selectors.
     const video = (document.querySelector('video.html5-main-video') ||
                    document.querySelector('video')) as HTMLVideoElement | null;
 
@@ -253,9 +253,9 @@ async function handleYoutube() {
         () => {
             return document.title.replace(' - YouTube', '') || '';
         },
-        (mediaEl) => {
+        (media) => {
             try {
-                const moviePlayer = document.getElementById('movie_player') || (mediaEl as HTMLElement).closest('#movie_player');
+                const moviePlayer = document.getElementById('movie_player') || (media as HTMLElement).closest('#movie_player');
                 if (moviePlayer) {
                     let existing = moviePlayer.querySelector<HTMLElement>('.kuraji-buttons');
                     if (existing) return existing;
@@ -299,10 +299,10 @@ function watchYoutube() {
     const observer = new MutationObserver(() => {
         const currentUrl = location.href;
         if (currentUrl !== lastUrl) {
+            cleanupOverlay();
             lastUrl = currentUrl;
 
             setTimeout(() => {
-                cleanupOverlay();
                 handleYoutube().catch(err => log.debug('handleYoutube error', err));
             }, 250);
         } else {
