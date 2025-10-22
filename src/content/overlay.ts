@@ -122,7 +122,12 @@ export function createMenu(
         minWidth: '240px',
         boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
         fontFamily: 'Arial, sans-serif',
-        fontSize: '14px'
+        fontSize: '14px',
+        gap: '0',
+        margin: '0',
+        lineHeight: 'normal',
+        letterSpacing: 'normal',
+        boxSizing: 'border-box',
     });
     dropdown.addEventListener('click', (e) => e.stopPropagation());
 
@@ -193,10 +198,6 @@ export function createMenu(
 
         if (!animeTitle) {
             alert('Anime title is required.');
-            return;
-        }
-        if (!episodeNumber && !episodeTitle) {
-            alert('You must provide either an episode number or an episode title.');
             return;
         }
 
@@ -282,6 +283,26 @@ export function createMenu(
     offsetDisplay.textContent = `Offset: ${subtitleOffset}ms`;
     Object.assign(offsetDisplay.style, { fontWeight: 'bold' });
     offsetRow.appendChild(offsetDisplay);
+
+    // Reset Button
+    const resetBtn = document.createElement('button');
+    resetBtn.textContent = 'Reset';
+    Object.assign(resetBtn.style, {
+        flex: '1 0 25%',
+        padding: '4px 0',
+        background: '#333',
+        color: 'white',
+        border: 'none',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        fontSize: '12px'
+    });
+    resetBtn.addEventListener('click', () => {
+        subtitleOffset = 0;
+        offsetDisplay.textContent = `Offset: ${subtitleOffset}ms`;
+        toggleCallback(toggleState, subtitleOffset, subtitleColor, subtitleFontSize);
+    });
+    offsetRow.appendChild(resetBtn);
 
     const hintBtn = document.createElement('div');
     hintBtn.textContent = '?';

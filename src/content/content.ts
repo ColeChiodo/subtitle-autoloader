@@ -8,7 +8,7 @@ import { parseSRTFile } from './parseSRT';
 const browser_ext = typeof browser !== "undefined" ? browser : chrome;
 
 let currentOverlay: HTMLElement | null = null;
-let currentVideo: HTMLVideoElement | HTMLIFrameElement | null = null;
+let currentVideo: HTMLVideoElement | HTMLIFrameElement | HTMLElement | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let watching = false;
 
@@ -41,12 +41,15 @@ let subtitleColor = defaultSettings.color;
 
 /**
  * Attaches the overlay to a video.
- * @param video 
+ * @param media The video element to attach the overlay to.
+ * @param getTitle A function that returns the title of the video.
+ * @param getButtonsContainer A function that returns the container for the button controls.
+ * @param getSearchQuery A function that breaks the video title into a search query.
  */
 async function attachOverlay(
-    media: HTMLVideoElement | HTMLIFrameElement,
+    media: HTMLVideoElement | HTMLIFrameElement | HTMLElement,
     getTitle: () => string | null,
-    getButtonsContainer: (media: HTMLVideoElement | HTMLIFrameElement) => HTMLElement | null,
+    getButtonsContainer: (media: HTMLVideoElement | HTMLIFrameElement | HTMLElement) => HTMLElement | null,
     getSearchQuery?: (title: string | null) => any
 ) {
     cleanupOverlay();
@@ -131,7 +134,7 @@ async function attachOverlay(
 
             subtitles = parseSRTFile(srtText);
             const fileNameSpan = menu.querySelector('.fileName');
-            if (fileNameSpan) fileNameSpan.textContent = `${sanitizeFileName(fileName || 'Kuraji Subtitles')}` || 'No subtitles found';
+            if (fileNameSpan) fileNameSpan.textContent = `${sanitizeFileName(fileName || 'No subtitles found')}` || 'No subtitles found';
 
             // Video time updates
             if (media instanceof HTMLVideoElement) {
@@ -169,6 +172,7 @@ async function attachOverlay(
  * Removes the overlay from the page
  */
 function cleanupOverlay() {
+    log.debug('Cleaning up overlay');
     if (resizeObserver && currentVideo) resizeObserver.unobserve(currentVideo);
     if (currentOverlay) {
         currentOverlay.querySelectorAll('span').forEach(s => s.remove());
@@ -218,10 +222,105 @@ function watchJellyfin() {
     const observer = new MutationObserver(() => {
         const video = document.querySelector('video');
         const onVideoPage = window.location.hash.startsWith('#/video');
-        if (onVideoPage && video && video !== currentVideo) handleJellyfin();
+        if (onVideoPage && video && video !== currentVideo) {
+            cleanupOverlay();
+            handleJellyfin();
+        }
     });
     observer.observe(document.body, { childList: true, subtree: true });
 }
+
+/**
+ * Handles video frame detection within Youtube.
+ */
+async function handleYoutube() {
+    const isVideoPage = window.location.pathname.startsWith('/watch');
+    if (!isVideoPage) {
+        cleanupOverlay();
+        return;
+    }
+
+    // Try to pick the canonical video element; YouTube sometimes moves things around,
+    // so try a couple of selectors.
+    const video = (document.querySelector('video.html5-main-video') ||
+                   document.querySelector('video')) as HTMLVideoElement | null;
+
+    log.debug('handleYoutube - found video:', video);
+    if (!video || video === currentVideo) return;
+
+    await attachOverlay(
+        video,
+        () => {
+            return document.title.replace(' - YouTube', '') || '';
+        },
+        (mediaEl) => {
+            try {
+                const moviePlayer = document.getElementById('movie_player') || (mediaEl as HTMLElement).closest('#movie_player');
+                if (moviePlayer) {
+                    let existing = moviePlayer.querySelector<HTMLElement>('.kuraji-buttons');
+                    if (existing) return existing;
+
+                    const rightControls = moviePlayer.querySelector<HTMLElement>('.ytp-right-controls');
+                    if (rightControls) {
+                        const container = document.createElement('div');
+                        container.className = 'kuraji-buttons';
+                        Object.assign(container.style, {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            marginRight: '8px',
+                            pointerEvents: 'auto',
+                            zIndex: '9999999'
+                        });
+                        rightControls.insertBefore(container, rightControls.firstChild);
+                        return container;
+                    }
+                }
+            } catch (err) {
+                log.debug('getButtonsContainer error', err);
+            }
+            return null;
+        },
+        (title) => parseVideoTitle(title || '')
+    );
+}
+
+/**
+ * Observe YouTube navigation and re-run handler on URL change / player updates
+ */
+function watchYoutube() {
+    if (watching) return;
+    watching = true;
+
+    log.debug('Watching for YouTube navigation');
+
+    let lastUrl = location.href;
+
+    const observer = new MutationObserver(() => {
+        const currentUrl = location.href;
+        if (currentUrl !== lastUrl) {
+            lastUrl = currentUrl;
+
+            setTimeout(() => {
+                cleanupOverlay();
+                handleYoutube().catch(err => log.debug('handleYoutube error', err));
+            }, 250);
+        } else {
+            // Even when URL doesn't change, the video element might be swapped. ensure overlay attaches if new video shows up
+            const video = document.querySelector('video.html5-main-video') || document.querySelector('video');
+            if (video && video !== currentVideo) {
+                cleanupOverlay();
+                handleYoutube().catch(err => log.debug('handleYoutube error', err));
+            }
+        }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Also try an initial run
+    setTimeout(() => handleYoutube().catch(err => log.debug('handleYoutube error', err)), 200);
+}
+
 
 /**
  * Handles navigation within Hianime.
@@ -259,12 +358,36 @@ async function init() {
     if (document.title.toLowerCase().includes('jellyfin')) {
         log.info('Detected Jellyfin web client');
         watchJellyfin();
-    } 
+    } else if (document.title.toLowerCase().includes('youtube')) {
+        log.info('Detected YouTube');
+        watchYoutube();
+    } else {
+        const srcHosts = [
+            'youtube.com',
+            'youtu.be',
+            'player.vimeo.com',
+            'dailymotion.com',
+            'twitch.tv',
+            'megacloud.blog',
+            'mega.nz',
+        ];
 
-    const iframe = document.querySelector('iframe');
-    if (iframe) {
-        log.info('iframe detected:', iframe.src);
-        handleIFrame(iframe as HTMLIFrameElement);
+        const iframes = Array.from(document.querySelectorAll('iframe'));
+
+        const videoIframe = iframes.find(iframe => {
+            log.debug('Checking iframe:', iframe.src);
+            try {
+                const url = new URL(iframe.src);
+                return srcHosts.some(host => url.hostname.includes(host));
+            } catch {
+                return false;
+            }
+        });
+
+        if (videoIframe) {
+            log.info('Video iframe detected:', videoIframe.src);
+            handleIFrame(videoIframe as HTMLIFrameElement);
+        }
     }
 }
 
