@@ -78,38 +78,61 @@ What I want to implement to this extension in the future.:
    Fetches the matched subtitle file for overlaying on the video.
 
 ## Installation
-If you want to build and run the extension yourself, you must:
-1. Clone the repository:
+
+You can either **use the prebuilt extension ZIPs** or **build it yourself from source**.
+
+### Option 1: Using the Prebuilt ZIP (easiest)
+
+1. **Download the ZIP** for your browser from the [Releases page](https://github.com/ColeChiodo/subtitle-autoloader/releases).
+2. **Extract** the ZIP file to a convenient location.
+3. **Load the extension:**
+
+   * **Firefox:**
+
+     * Go to `about:debugging`
+     * Click **“Load Temporary Add-on”**
+     * Select the `manifest.json` file inside the extracted folder
+   * **Chrome:**
+
+     * Go to `chrome://extensions/`
+     * Enable **Developer mode** (top right)
+     * Click **“Load unpacked”**
+     * Select the extracted folder
+4. **Start watching anime** — your Japanese subtitles will load automatically!
+
+### Option 2: Building from Source
+
+1. **Clone the repository:**
+
    ```bash
    git clone https://github.com/ColeChiodo/subtitle-autoloader.git
    cd subtitle-autoloader/
    ```
+2. **Install dependencies and build for your browser:**
 
-2. Install and build the Extension
-    ```bash
-    npm install
-    ```
-    Build for your target browser:
-    ```bash
-    npm run build:firefox
-    ``` 
-    ```bash
-    npm run build:chrome
-    ```
-3. Load the extension 
+   ```bash
+   npm install
+   ```
+   Build for your target browser:
+   ```bash
+   npm run build:firefox
+   ```
+   ```bash
+   npm run build:chrome
+   ```
+3. **Load the extension:**
 
-   **Firefox:**
-   * Go to `about:debugging`
-   * Click **Load Temporary Add-on**
-   * Select the `manifest.json` in the built `dist` directory
+   * **Firefox:**
+      * Go to `about:debugging`
+      * **Load Temporary Add-on** 
+      * Select `manifest.json` in the `dist` folder.
+   * **Chrome:**
+      * Go to `chrome://extensions/` 
+      * Enable **Developer mode** 
+      * **Load unpacked** 
+      * Select the `dist` folder.
 
-   **Chrome**
-   * Go to `chrome://extensions/`
-   * Toggle **Developer mode** in the top right.
-   * Click **“Load unpacked”**.
-      * Select the built `dist` directory.
-
-4. Start watching anime on Jellyfin and enjoy auto-loaded Japanese subtitles.
+4. **Start watching anime** — your Japanese subtitles will load automatically!
 
 
 ## Development
