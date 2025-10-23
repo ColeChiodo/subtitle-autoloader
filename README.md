@@ -1,7 +1,7 @@
 ![Logo](public/assets/readme/icon.png)
 # Kuraji -「クラジ」 Automatic Japanese Subtitle Finder for Jellyfin
 
-**Kuraji** is an open-source browser extension for Firefox and Chrome that automatically finds Japanese subtitles for the video you are watching. Currently focused on anime on Jellyfin, it searches, downloads, and overlays subtitles synchronized with your video.
+**Kuraji** is an open-source browser extension for Firefox and Chrome that automatically finds Japanese subtitles for the video you are watching. Currently focused on anime on Jellyfin, Youtube, and more. It searches, downloads, and overlays subtitles synchronized with your video.
 
 ![Kuraji Extension Playing on Jellyfin Gif](/public/assets/readme/kurajitest.gif)
 

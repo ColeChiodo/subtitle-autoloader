@@ -327,7 +327,6 @@ function watchYoutube() {
  * If navigating to an iframe, attach listener for video time messages.
  */
 async function handleIFrame(iframe: HTMLIFrameElement) {
-    if (watching) return;
     log.debug('handling iframe');
 
     if (iframe && iframe !== currentVideo) {
@@ -335,24 +334,78 @@ async function handleIFrame(iframe: HTMLIFrameElement) {
             iframe,
             () => '',
             (iframe) => {
+                const parent = iframe.parentElement;
+                if (!parent) return null;
                 const container = document.createElement('div');
                 container.classList.add('kuraji-buttons');
+
                 Object.assign(container.style, {
                     position: 'absolute',
                     bottom: '0',
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    zIndex: '999999999'
+                    zIndex: '999999999',
+                    pointerEvents: 'auto',
+                    opacity: '1',
+                    transition: 'opacity 0.4s ease-in-out',
                 });
-                iframe.parentNode?.insertBefore(container, iframe.nextSibling);
+
+                parent.appendChild(container);
+
+                let fadeTimeout: number | null = null;
+
+                // Helper to show and schedule fade-out
+                function showContainerTemporarily() {
+                    container.style.opacity = '1';
+                    if (fadeTimeout) clearTimeout(fadeTimeout);
+                    fadeTimeout = window.setTimeout(() => {
+                        container.style.opacity = '0';
+                    }, 3000); // fade out after 3s of inactivity
+                }
+
+                parent.addEventListener('mousemove', showContainerTemporarily);
+                parent.addEventListener('mouseleave', () => (container.style.opacity = '0'));
+
+                showContainerTemporarily();
+
                 return container;
             }
         );
     }
 }
 
+function getIFrame() {
+    const srcHosts = [
+        'youtube.com',
+        'youtu.be',
+        'player.vimeo.com',
+        'dailymotion.com',
+        'twitch.tv',
+        'megacloud.blog',
+        'mega.nz',
+    ];
+
+    const iframes = Array.from(document.querySelectorAll('iframe'));
+
+    const videoIframe = iframes.find(iframe => {
+        log.debug('Checking iframe:', iframe.src);
+        try {
+            const url = new URL(iframe.src);
+            return srcHosts.some(host => url.hostname.includes(host));
+        } catch {
+            return false;
+        }
+    });
+
+    if (videoIframe) {
+        log.info('Video iframe detected:', videoIframe.src);
+
+        handleIFrame(videoIframe as HTMLIFrameElement);
+    }
+}
+
 /**
- * Initialize - checks the current page to handle events differently
+ * Initialize - checks the current context (top page vs iframe)
  */
 async function init() {
     if (document.title.toLowerCase().includes('jellyfin')) {
@@ -362,31 +415,9 @@ async function init() {
         log.info('Detected YouTube');
         watchYoutube();
     } else {
-        const srcHosts = [
-            'youtube.com',
-            'youtu.be',
-            'player.vimeo.com',
-            'dailymotion.com',
-            'twitch.tv',
-            'megacloud.blog',
-            'mega.nz',
-        ];
-
-        const iframes = Array.from(document.querySelectorAll('iframe'));
-
-        const videoIframe = iframes.find(iframe => {
-            log.debug('Checking iframe:', iframe.src);
-            try {
-                const url = new URL(iframe.src);
-                return srcHosts.some(host => url.hostname.includes(host));
-            } catch {
-                return false;
-            }
-        });
-
-        if (videoIframe) {
-            log.info('Video iframe detected:', videoIframe.src);
-            handleIFrame(videoIframe as HTMLIFrameElement);
+        for (let i = 0; i < 10; i++) {
+            getIFrame();
+            await new Promise(resolve => setTimeout(resolve, 1000));
         }
     }
 }

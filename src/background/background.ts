@@ -369,6 +369,10 @@ let lastRequest = { title: "", timestamp: 0 };
 const DEBOUNCE_MS = 1000;
 
 async function handleMessage(msg: any, sender: any) {
+    if (msg.type === "LOG_DEBUG") {
+        log.debug(msg.message);
+        return { text: "", fileName: null };
+    }
     if (msg.type !== "GET_SUBS") return { text: "", fileName: null };
 
     const tabId = sender.tab?.id ?? 0;

@@ -18,13 +18,13 @@ return {
 			// Inject background field depending on target
 			if (target === 'firefox') {
 				manifest.background = {
-				scripts: ['background/background.js'],
-				type: 'module'
+					scripts: ['background/background.js'],
+					type: 'module'
 				};
 			} else {
 				manifest.background = {
-				service_worker: 'background/background.js',
-				type: 'module'
+					service_worker: 'background/background.js',
+					type: 'module'
 				};
 			}
 

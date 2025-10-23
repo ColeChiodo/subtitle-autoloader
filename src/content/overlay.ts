@@ -15,8 +15,6 @@ export function initSubtitles(defaults: { subs: boolean; }) {
     document.body.appendChild(overlay);
     overlay.style.display = defaults.subs ? 'flex' : 'none';
 
-    makeDraggable(span);
-
     return overlay;
 }
 
@@ -48,9 +46,19 @@ function createSubtitleSpan(): HTMLSpanElement {
         fontSize: '25px',
         textShadow: '2px 2px 4px black',
         cursor: 'move',
-        pointerEvents: 'auto',
-        userSelect: 'none'
+        pointerEvents: 'all',
+        userSelect: 'none',
+        display: 'none' // hide initially
     });
+
+    const observer = new MutationObserver(() => {
+        span.style.display = span.textContent && span.textContent.trim() !== '' ? 'inline-block' : 'none';
+    });
+
+    observer.observe(span, { characterData: true, childList: true, subtree: true });
+
+    makeDraggable(span);
+
     return span;
 }
 
