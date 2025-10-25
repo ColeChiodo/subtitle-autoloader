@@ -6,7 +6,7 @@
 ![Kuraji Extension Playing on Jellyfin Gif](/public/assets/readme/kurajitest.gif)
 
 ## How to use
-To use the extension. You must do the following:
+### To use the extension. You must do the following:
 1. **Generate and Save a GitHub Token**
    * [**Create a fine-grained personal access token on GitHub**](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token)
       * Ensure Public repository access
@@ -41,12 +41,19 @@ I created Kuraji to automatically find and load Japanese subtitles, saving time 
    * **Basic iFrame Support**
 
 ## Future Plans
-What I want to implement to this extension in the future.:
+### What I want to implement to this extension in the future:
 * Expand website compatibility
 * Support other subtitle file extensions (`.ass`).
 * Fix iFrame site quirks (fullscreen, etc)
 * Add Japanese language support for live action tv shows/movies/dramas (requires sourcing of additional subtitle databases).
    * Not High Priority, because sites that offer live action shows/movies already provide Japanese subtitles, for the most part.
+
+### Site Support Wishlist
+* Netflix
+* Crunchyroll
+* Miruro
+
+Request more by [submitting an issue](https://github.com/ColeChiodo/subtitle-autoloader/issues). (No guarantee that I will add support)
 
 ## How It Works
 
@@ -144,6 +151,4 @@ You can either **use the prebuilt extension ZIPs** or **build it yourself from s
 
 ![Kuraji Extension Playing on Jellyfin 1](public/assets/readme/example2.png)
 
-## License
-
-MIT License © 2025 colechiodo.cc
+**© 2025 [colechiodo.cc](https://colechiodo.cc) | MIT License**
