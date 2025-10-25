@@ -48,13 +48,17 @@ export function parseVideoTitle(videoTitle: string): {
     year?: number;
 } {
     log.debug(`Parsing video title: ${videoTitle}`);
+
+    // Match year in parentheses, e.g. (2021)
     const yearMatch = videoTitle.match(/\((\d{4})\)/);
     const year = yearMatch ? parseInt(yearMatch[1]) : undefined;
 
-    const seMatch = videoTitle.match(/S(\d+)[\s:]*E(\d+)/i);
+    // Match S#E#, S# E#, S#:E#, or S# · E#
+    const seMatch = videoTitle.match(/S(\d+)[\s:·]*E(\d+)/i);
     const season = seMatch ? parseInt(seMatch[1]) : undefined;
     const episode = seMatch ? parseInt(seMatch[2]) : undefined;
 
+    // Split on hyphens to extract main and episode title
     const parts = videoTitle.split(" - ").map(p => p.trim()).filter(Boolean);
     const mainTitle = parts[0]?.replace(/\(.*?\)/g, "").trim() || videoTitle.trim();
 

@@ -233,6 +233,100 @@ function watchJellyfin() {
 }
 
 /**
+ * Handles navigation within Plex.
+ * If navigating to a video page, attach overlay.
+ * If navigating away from a video page, remove overlay.
+ */
+async function handlePlex() {
+    const video = document.querySelector('video');
+    if (video && video !== currentVideo) {
+        await attachOverlay(
+            video,
+            () => {
+                const container = document.querySelector('.PlayerControls-buttonGroupLeft-M_U9AP');
+                if (!container) return null;
+                const titleEl = container.querySelector('a[data-testid="metadataTitleLink"]');
+                if (!titleEl) return null;
+                const title = titleEl.getAttribute('title')?.trim() || titleEl.textContent?.trim() || '';
+
+                const seSection = container.querySelector('.MetadataPosterTitle-isSecondary-lJfKBu');
+                let season = '';
+                let episode = '';
+                let episodeTitle = '';
+
+                if (seSection) {
+                    const links = seSection.querySelectorAll('a');
+                    if (links.length >= 2) {
+                        season = links[0]?.textContent?.trim() || '';
+                        episode = links[1]?.textContent?.trim() || '';
+                    }
+
+                    // The last <a> after the em dash (—) is usually the episode title
+                    const epTitleEl = seSection.querySelectorAll('a')[2];
+                    if (epTitleEl) {
+                        episodeTitle = epTitleEl.textContent?.trim() || '';
+                    } else {
+                        // fallback: find last metadataTitleLink with a different href
+                        const lastLink = container.querySelectorAll('a[data-testid="metadataTitleLink"]');
+                        if (lastLink.length > 1)
+                            episodeTitle = lastLink[lastLink.length - 1]?.getAttribute('title') || '';
+                    }
+                }
+
+                // Format output
+                const seasonEpisode = (season && episode) ? `${season}${episode}` : '';
+                const parts = [title, seasonEpisode, episodeTitle].filter(Boolean);
+
+                return parts.join(' - ');
+            },
+            (_video) => {
+                const controls = document.querySelectorAll<HTMLDivElement>('.PlayerControls-controls-PXkgmR');
+                if (!controls.length) return null;
+                const buttonsContainer = controls[controls.length - 1].querySelectorAll<HTMLDivElement>('.PlayerControls-buttonGroupRight-Bs12vn');
+                return buttonsContainer[buttonsContainer.length - 1] || null;
+            },
+            (title) => parseVideoTitle(title || '')
+        );
+    }
+}
+
+/**
+ * Set a listener for page navigation within Plex
+ */
+function watchPlex() {
+    if (watching) return;
+    watching = true;
+
+    log.debug('Watching for Plex navigation');
+    let lastTitle = document.title;
+
+    // Observe <title> for changes
+    const titleEl = document.querySelector('title');
+    if (!titleEl) return log.error('No <title> element found');
+
+    const observer = new MutationObserver(() => {
+        const newTitle = document.title;
+        if (newTitle !== lastTitle) {
+            log.debug(`Title changed: ${lastTitle} → ${newTitle}`);
+            lastTitle = newTitle;
+
+            const video = document.querySelector('video');
+            if (video && video !== currentVideo) {
+                cleanupOverlay();
+                handlePlex();
+                currentVideo = video;
+            } else if (!video) {
+                cleanupOverlay();
+                currentVideo = null;
+            }
+        }
+    });
+
+    // Watch for character data changes inside <title>
+    observer.observe(titleEl, { subtree: true, characterData: true, childList: true });
+}
+
+/**
  * Handles video frame detection within Youtube.
  */
 async function handleYoutube() {
@@ -411,6 +505,9 @@ async function init() {
     if (document.title.toLowerCase().includes('jellyfin')) {
         log.info('Detected Jellyfin web client');
         watchJellyfin();
+    } else if (document.title.toLowerCase().includes('plex')) {
+        log.info('Detected Plex web client');
+        watchPlex();
     } else if (document.title.toLowerCase().includes('youtube')) {
         log.info('Detected YouTube');
         watchYoutube();
