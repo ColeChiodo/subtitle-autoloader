@@ -7,20 +7,19 @@
 
 	"browser_specific_settings": {
 		"gecko": {
-			"id": "colechiodo@gmail.com",
+			"id": "colechiodo.cc",
 			"strict_min_version": "112.0"
 		}
 	},
 
 	"icons": {
-		"16": "assets/icons/cc-icon-white.png",
-		"48": "assets/icons/cc-icon-white.png",
-		"128": "assets/icons/cc-icon-white.png"
+		"16": "assets/icons/icon16.png",
+		"48": "assets/icons/icon48.png",
+		"128": "assets/icons/icon128.png"
 	},
 
 	"permissions": [
-		"storage",
-		"activeTab"
+		"storage"
 	],
 
 	"host_permissions": [
