@@ -181,78 +181,94 @@ export function generateTitleVariants(parsed: ParsedTitle, meta: AnimeMetadata):
     return Array.from(candidates);
 }
 
+const SUBTITLE_CATEGORIES = [
+    "anime_movie",
+    "anime_tv",
+    "drama_movie",
+    "drama_tv",
+    "unsorted"
+];
+
+/**
+ * Searches across all new GitHub sub-directories for the target animeDir.
+ */
+async function searchAllGitHubSubtitles(animeDir: string): Promise<SubtitleFile[]> {
+    const allResults = await Promise.all(
+        SUBTITLE_CATEGORIES.map(category => 
+            fetchGitHubSubtitlesSafe(`${category}/${animeDir}`)
+        )
+    );
+    
+    // Flatten the array of arrays into a single list of files
+    return allResults.flat();
+}
+
 /**
  * Recursively fetch subtitle files from GitHub using API
- * Uses user-supplied GitHub token from storage if available.
  */
 async function fetchGitHubSubtitlesSafe(
-	animeDir: string,
-	depth = 0,
-	maxDepth = 4
+    path: string, // path now includes category, e.g., "anime_tv/Cowboy Bebop"
+    depth = 0,
+    maxDepth = 4
 ): Promise<SubtitleFile[]> {
-	log.debug(`Fetching subtitles for directory: ${animeDir}`);
-	if (depth > maxDepth || visitedDirs.has(animeDir)) {
-		log.debug(`Skipping directory: ${animeDir}`);
-		return [];
-	}
-	visitedDirs.add(animeDir);
+    log.debug(`Fetching subtitles for path: ${path}`);
+    
+    if (depth > maxDepth || visitedDirs.has(path)) {
+        log.debug(`Skipping path: ${path}`);
+        return [];
+    }
+    visitedDirs.add(path);
 
-	const apiUrl = `https://api.github.com/repos/Ajatt-Tools/kitsunekko-mirror/contents/subtitles/${animeDir}`;
+    // The base URL now points to the path within the subtitles folder
+    const apiUrl = `https://api.github.com/repos/Ajatt-Tools/kitsunekko-mirror/contents/subtitles/${path}`;
 
-	// Load GitHub token from browser storage
-	let githubToken: string | undefined;
-	try {
-		const data = await browser_ext.storage.local.get("githubToken");
-		githubToken = data.githubToken;
-        log.debug("Loaded GitHub token from storage");
-	} catch (err) {
-		log.warn("Failed to read GitHub token from storage:", err);
-	}
+    let githubToken: string | undefined;
+    try {
+        const data = await browser_ext.storage.local.get("githubToken");
+        githubToken = data.githubToken;
+    } catch (err) {
+        log.warn("Failed to read GitHub token from storage:", err);
+    }
 
-	// Build headers (use token if available)
-	const headers: Record<string, string> = {
-		Accept: "application/vnd.github.v3+json",
-		"User-Agent": "Kuraji-Extension",
-	};
-	if (githubToken) {
-		headers.Authorization = `token ${githubToken}`;
-	}
+    const headers: Record<string, string> = {
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "Kuraji-Extension",
+    };
+    if (githubToken) {
+        headers.Authorization = `token ${githubToken}`;
+    }
 
-	const res = await fetch(apiUrl, { headers });
+    const res = await fetch(apiUrl, { headers });
 
-	if (!res.ok) {
-		log.error(`Failed to fetch API contents for ${animeDir}: ${res.status}`);
-		try {
-			const errJson = await res.json();
-			log.error(`Response:`, errJson);
-		} catch {
-			log.error(`Response text:`, await res.text());
-		}
-		return [];
-	}
+    // If a category doesn't contain this specific anime, GitHub returns 404
+    if (!res.ok) {
+        if (res.status !== 404) {
+            log.error(`Error fetching ${path}: ${res.status}`);
+        }
+        return [];
+    }
 
-	const data: any[] = await res.json();
-	const files: SubtitleFile[] = [];
+    const data: any[] = await res.json();
+    const files: SubtitleFile[] = [];
 
-	for (const item of data) {
-		if (item.type === "file") {
-			const ext = item.name.split(".").pop()?.toLowerCase();
-			if (ext === "ass") {
-				log.warn(`Found ${item.name} (ASS) — only SRT supported`);
-				continue;
-			} else if (ext !== "srt") continue;
+    for (const item of data) {
+        if (item.type === "file") {
+            const ext = item.name.split(".").pop()?.toLowerCase();
+            if (ext === "srt") {
+                files.push({ name: item.name, url: item.download_url });
+            } else if (ext === "ass") {
+                log.warn(`Found ${item.name} (ASS) — only SRT supported`);
+            }
+        } else if (item.type === "dir") {
+            // Recurse into subdirectories
+            // item.path is the full path from repo root (e.g. "subtitles/anime_tv/Show/Season1")
+            const relativePath = item.path.replace(/^subtitles\//, "");
+            const subFiles = await fetchGitHubSubtitlesSafe(relativePath, depth + 1, maxDepth);
+            files.push(...subFiles);
+        }
+    }
 
-			files.push({ name: item.name, url: item.download_url });
-		} else if (item.type === "dir") {
-			// Extract path relative to `subtitles/` root
-			const relativePath = item.path.replace(/^subtitles\//, "");
-			const subFiles = await fetchGitHubSubtitlesSafe(relativePath, depth + 1, maxDepth);
-			files.push(...subFiles);
-		}
-	}
-
-	log.debug(`Found ${files.length} subtitle files for directory: ${animeDir}`);
-	return files;
+    return files;
 }
 
 /**
@@ -358,7 +374,7 @@ export async function fetchSubtitle(
     for (const variant of variants) {
         if (context?.cancelled) return { text: "", fileName: null };
 
-        const files = await fetchGitHubSubtitlesSafe(variant);
+        const files = await searchAllGitHubSubtitles(variant);
         if (files.length === 0) continue;
 
         const match = await matchSubtitleFile(files, parsed, meta);
