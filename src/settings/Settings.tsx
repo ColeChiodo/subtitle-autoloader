@@ -23,6 +23,12 @@ function SettingsPage() {
 		setTimeout(() => setStatus(''), 2000);
 	};
 
+	const clearCache = async () => {
+		await browser.storage.local.remove('categoryCache');
+		setStatus('✅ Cache cleared!');
+		setTimeout(() => setStatus(''), 2000);
+	};
+
 	return (
 		<div className="p-8 bg-[#282828] text-[#ebdbb2] min-h-screen flex flex-col items-center">
 			<h1 className="text-2xl font-bold mb-4 text-[#fabd2f]">Kuraji Settings</h1>
@@ -46,6 +52,15 @@ function SettingsPage() {
 					Save Token
 				</button>
 				{status && <p className="mt-2 text-[#b8bb26]">{status}</p>}
+			</div>
+
+			<div className="bg-[#3c3836] p-4 rounded-lg w-full max-w-md text-center mt-4">
+				<button
+					onClick={clearCache}
+					className="bg-[#fb4934] text-white px-4 py-2 rounded hover:bg-[#cc241d] font-semibold"
+				>
+					Clear Folder Cache
+				</button>
 			</div>
 
 			<p className="text-sm text-[#bdae93] mt-6">Version {version}</p>

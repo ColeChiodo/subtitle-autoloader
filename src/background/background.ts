@@ -47,6 +47,7 @@ interface AnimeMetadata {
 interface SubtitleFile {
     name: string;
     url: string;
+    extension: string;
 }
 
 // Keep track of visited directories to prevent loops
@@ -189,18 +190,158 @@ const SUBTITLE_CATEGORIES = [
     "unsorted"
 ];
 
+const CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
+
+interface CategoryCache {
+    folders: string[];
+    timestamp: number;
+}
+
+interface FolderCache {
+    anime_movie?: CategoryCache;
+    anime_tv?: CategoryCache;
+    drama_movie?: CategoryCache;
+    drama_tv?: CategoryCache;
+    unsorted?: CategoryCache;
+}
+
+async function getCachedFolders(category: string): Promise<string[] | null> {
+    try {
+        const stored = await browser_ext.storage.local.get("categoryCache");
+        const cache: FolderCache = stored.categoryCache || {};
+        const catCache = cache[category as keyof FolderCache];
+        
+        if (catCache && Date.now() - catCache.timestamp < CACHE_TTL_MS) {
+            log.debug(`Using cached folders for ${category}: ${catCache.folders.length} folders`);
+            return catCache.folders;
+        }
+    } catch (err) {
+        log.warn(`Failed to read cache: ${err}`);
+    }
+    return null;
+}
+
+async function setCachedFolders(category: string, folders: string[]): Promise<void> {
+    try {
+        const stored = await browser_ext.storage.local.get("categoryCache");
+        const cache: FolderCache = stored.categoryCache || {};
+        cache[category as keyof FolderCache] = { folders, timestamp: Date.now() };
+        await browser_ext.storage.local.set({ categoryCache: cache });
+        log.debug(`Cached ${folders.length} folders for ${category}`);
+    } catch (err) {
+        log.warn(`Failed to write cache: ${err}`);
+    }
+}
+
+async function fetchCategoryFolders(category: string): Promise<string[]> {
+    const cached = await getCachedFolders(category);
+    if (cached) return cached;
+
+    log.debug(`Fetching folder list for category: ${category}`);
+    const apiUrl = `https://api.github.com/repos/Ajatt-Tools/kitsunekko-mirror/contents/subtitles/${category}`;
+
+    let githubToken: string | undefined;
+    try {
+        const data = await browser_ext.storage.local.get("githubToken");
+        githubToken = data.githubToken;
+    } catch (err) {
+        log.warn("Failed to read GitHub token from storage:", err);
+    }
+
+    const headers: Record<string, string> = {
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "Kuraji-Extension",
+    };
+    if (githubToken && /^[a-zA-Z0-9_-]+$/.test(githubToken)) {
+        headers.Authorization = "token " + githubToken;
+    }
+
+    const res = await fetch(apiUrl, { headers });
+    if (!res.ok) {
+        log.error(`Error fetching category ${category}: ${res.status}`);
+        return [];
+    }
+
+    const data: any[] = await res.json();
+    const folders = data
+        .filter((item: any) => item.type === "dir")
+        .map((item: any) => item.name);
+
+    await setCachedFolders(category, folders);
+    return folders;
+}
+
 /**
- * Searches across all new GitHub sub-directories for the target animeDir.
+ * Searches using cached folder list + fuzzy matching.
  */
-async function searchAllGitHubSubtitles(animeDir: string): Promise<SubtitleFile[]> {
-    const allResults = await Promise.all(
-        SUBTITLE_CATEGORIES.map(category => 
-            fetchGitHubSubtitlesSafe(`${category}/${animeDir}`)
-        )
+async function searchAllGitHubSubtitles(
+    animeDir: string, 
+    category: string | undefined,
+    folderCache: Map<string, string[]>
+): Promise<SubtitleFile[]> {
+    const categories = category ? [category] : SUBTITLE_CATEGORIES;
+    const searchTerm = animeDir.toLowerCase();
+    
+    log.debug(`Searching for: "${animeDir}" in categories: ${categories.join(", ")}`);
+    
+    const allFolderMatches: { category: string; folder: string; score: number }[] = [];
+    
+    for (const cat of categories) {
+        let folders = folderCache.get(cat);
+        if (!folders) {
+            folders = await fetchCategoryFolders(cat);
+            folderCache.set(cat, folders);
+        }
+        
+        if (folders.length === 0) continue;
+        
+        // Use simple includes for partial match
+        const matchingFolders = folders.filter(f => 
+            f.toLowerCase().includes(searchTerm) || 
+            searchTerm.includes(f.toLowerCase())
+        );
+        
+        for (const folder of matchingFolders) {
+            allFolderMatches.push({
+                category: cat,
+                folder: folder,
+                score: 1
+            });
+        }
+        
+        // Also try fuzzy search
+        const folderCandidates = folders.map(f => f.toLowerCase());
+        const searcher = new Searcher(folderCandidates, { threshold: 0.3 });
+        const fuzzyResults = searcher.search(searchTerm);
+        
+        for (const result of fuzzyResults) {
+            const idx = folderCandidates.indexOf(result);
+            if (idx >= 0) {
+                allFolderMatches.push({
+                    category: cat,
+                    folder: folders[idx],
+                    score: 0.8
+                });
+            }
+        }
+    }
+    
+    if (allFolderMatches.length === 0) {
+        log.debug(`No folder matches found for "${animeDir}"`);
+        return [];
+    }
+    
+    // Remove duplicates
+    const uniqueMatches = allFolderMatches.filter((match, index, self) =>
+        index === self.findIndex((m) => m.folder === match.folder && m.category === match.category)
     );
     
-    // Flatten the array of arrays into a single list of files
-    return allResults.flat();
+    uniqueMatches.sort((a, b) => b.score - a.score);
+    const bestMatch = uniqueMatches[0];
+    log.debug(`Best match: "${bestMatch.folder}" (score: ${bestMatch.score}) in ${bestMatch.category}`);
+    
+    const files = await fetchGitHubSubtitlesSafe(`${bestMatch.category}/${bestMatch.folder}`);
+    return files;
 }
 
 /**
@@ -234,8 +375,8 @@ async function fetchGitHubSubtitlesSafe(
         Accept: "application/vnd.github.v3+json",
         "User-Agent": "Kuraji-Extension",
     };
-    if (githubToken) {
-        headers.Authorization = `token ${githubToken}`;
+    if (githubToken && /^[a-zA-Z0-9_-]+$/.test(githubToken)) {
+        headers.Authorization = "token " + githubToken;
     }
 
     const res = await fetch(apiUrl, { headers });
@@ -254,10 +395,8 @@ async function fetchGitHubSubtitlesSafe(
     for (const item of data) {
         if (item.type === "file") {
             const ext = item.name.split(".").pop()?.toLowerCase();
-            if (ext === "srt") {
-                files.push({ name: item.name, url: item.download_url });
-            } else if (ext === "ass") {
-                log.warn(`Found ${item.name} (ASS) — only SRT supported`);
+            if (ext === "srt" || ext === "ass") {
+                files.push({ name: item.name, url: item.download_url, extension: ext });
             }
         } else if (item.type === "dir") {
             // Recurse into subdirectories
@@ -322,6 +461,35 @@ async function matchSubtitleFile(
         }
     }
 
+    // Score files by language priority (Japanese > English > Chinese/Other)
+    const scoreFile = (fileName: string): number => {
+        const name = fileName.toLowerCase();
+        let score = 0;
+        
+        // Language priority
+        if (name.includes('jpn') || name.includes('jap') || name.includes('[jpn]') || name.endsWith('.jpn.ass') || name.endsWith('.jpn.srt')) {
+            score = 100;
+        } else if (name.includes('eng') || name.includes('[eng]') || name.endsWith('.eng.ass') || name.endsWith('.eng.srt')) {
+            score = 50;
+        } else if (name.includes('chs') || name.includes('chn') || name.includes('[chs]') || name.endsWith('.chs.ass') || name.endsWith('.chs.srt')) {
+            score = 10;
+        } else if (name.includes('cht') || name.includes('big5') || name.includes('[cht]')) {
+            score = 5;
+        }
+        
+        // Prefer root folder over subdirectories
+        const depth = fileName.split('/').length;
+        score += (10 - depth) * 2;
+        
+        return score;
+    };
+
+    // Score all files
+    const scoredFiles = files.map(f => ({ file: f, score: scoreFile(f.name) }));
+    scoredFiles.sort((a, b) => b.score - a.score);
+
+    log.debug(`Top scored files:`, scoredFiles.slice(0, 3).map(f => ({ name: f.file.name, score: f.score })));
+
     // Fuzzy search on title
     const candidates = files.map(f => f.name.toLowerCase());
     const searcher = new Searcher(candidates, { returnMatchData: false, threshold: 0.7 });
@@ -329,14 +497,15 @@ async function matchSubtitleFile(
     if (best) {
         const fallback = files.find(f => f.name.toLowerCase() === best);
         if (fallback) {
-            log.debug(`Found fallback match: ${fallback.name}`);
+            log.debug(`Found fuzzy match: ${fallback.name}`);
             return fallback;
         }
     }
 
-    // Default fallback
-    log.debug(`Returning first file: ${files[0].name}`);
-    return files[0];
+    // Default fallback - use highest scored
+    const bestScored = scoredFiles[0];
+    log.debug(`Returning best scored file: ${bestScored.file.name} (score: ${bestScored.score})`);
+    return bestScored.file;
 }
 
 
@@ -356,9 +525,10 @@ async function fetchSubtitleFile(file: SubtitleFile): Promise<string> {
  */
 export async function fetchSubtitle(
     videoTitle: string,
-    context?: { cancelled: boolean }
-): Promise<{ text: string; fileName: string | null }> {
-    log.debug(`Fetching subtitle for video: ${videoTitle}`);
+    context?: { cancelled: boolean },
+    category?: string
+): Promise<{ text: string; fileName: string | null; extension: string | null }> {
+    log.debug(`Fetching subtitle for video: ${videoTitle}, category: ${category || "all"}`);
     visitedDirs.clear();
 
     const parsed = parseVideoTitle(videoTitle);
@@ -367,24 +537,143 @@ export async function fetchSubtitle(
     const hasAniListEntry =
         meta && (meta.english || meta.romaji || meta.native || (meta.synonyms?.length ?? 0) > 0);
 
-    if (!hasAniListEntry) return { text: "Kuraji -「クラジ」", fileName: null };
+    if (!hasAniListEntry) return { text: "Kuraji -「クラジ」", fileName: null, extension: null };
 
     const variants = generateTitleVariants(parsed, meta);
+    const folderCache = new Map<string, string[]>();
 
     for (const variant of variants) {
-        if (context?.cancelled) return { text: "", fileName: null };
+        if (context?.cancelled) return { text: "", fileName: null, extension: null };
 
-        const files = await searchAllGitHubSubtitles(variant);
+        log.debug(`Trying variant: "${variant}"`);
+
+        const files = await searchAllGitHubSubtitles(variant, category, folderCache);
         if (files.length === 0) continue;
 
         const match = await matchSubtitleFile(files, parsed, meta);
         if (match) {
             const text = await fetchSubtitleFile(match);
-            return { text, fileName: match.name };
+            return { text, fileName: match.name, extension: match.extension };
         }
     }
 
-    return { text: "", fileName: null };
+    return { text: "", fileName: null, extension: null };
+}
+
+interface FolderMatch {
+    folder: string;
+    category: string;
+}
+
+interface FileMatch {
+    name: string;
+    url: string;
+    extension: string;
+}
+
+export async function searchFolders(
+    videoTitle: string,
+    category?: string
+): Promise<{ matches: FolderMatch[] }> {
+    log.debug(`Searching folders for: ${videoTitle}, category: ${category || "all"}`);
+    visitedDirs.clear();
+
+    const parsed = parseVideoTitle(videoTitle);
+    const meta = await lookupAnimeMetadata(parsed.title);
+
+    if (!meta) return { matches: [] };
+
+    const variants = generateTitleVariants(parsed, meta);
+    const folderCache = new Map<string, string[]>();
+    const allMatches: FolderMatch[] = [];
+
+    for (const variant of variants) {
+        const matches = await searchFolderMatches(variant, category, folderCache);
+        for (const match of matches) {
+            if (!allMatches.some(m => m.folder === match.folder && m.category === match.category)) {
+                allMatches.push(match);
+            }
+        }
+    }
+
+    log.debug(`Found ${allMatches.length} folder matches`);
+    return { matches: allMatches.slice(0, 10) }; // Limit to 10
+}
+
+async function searchFolderMatches(
+    animeDir: string, 
+    category: string | undefined,
+    folderCache: Map<string, string[]>
+): Promise<FolderMatch[]> {
+    const categories = category ? [category] : SUBTITLE_CATEGORIES;
+    const searchTerm = animeDir.toLowerCase();
+    
+    const allFolderMatches: FolderMatch[] = [];
+    
+    for (const cat of categories) {
+        let folders = folderCache.get(cat);
+        if (!folders) {
+            folders = await fetchCategoryFolders(cat);
+            folderCache.set(cat, folders);
+        }
+        
+        if (folders.length === 0) continue;
+        
+        // Substring match
+        const matchingFolders = folders.filter(f => 
+            f.toLowerCase().includes(searchTerm) || 
+            searchTerm.includes(f.toLowerCase())
+        );
+        
+        for (const folder of matchingFolders) {
+            allFolderMatches.push({ folder, category: cat });
+        }
+        
+        // Fuzzy match
+        const folderCandidates = folders.map(f => f.toLowerCase());
+        const searcher = new Searcher(folderCandidates, { threshold: 0.3 });
+        const fuzzyResults = searcher.search(searchTerm);
+        
+        for (const result of fuzzyResults) {
+            const idx = folderCandidates.indexOf(result);
+            if (idx >= 0) {
+                const folder = folders[idx];
+                if (!allFolderMatches.some(m => m.folder === folder)) {
+                    allFolderMatches.push({ folder, category: cat });
+                }
+            }
+        }
+    }
+    
+    return allFolderMatches;
+}
+
+export async function getFilesInFolder(
+    category: string,
+    folder: string
+): Promise<{ files: FileMatch[] }> {
+    log.debug(`Getting files in ${category}/${folder}`);
+    visitedDirs.clear();
+    
+    const files = await fetchGitHubSubtitlesSafe(`${category}/${folder}`);
+    
+    const fileMatches: FileMatch[] = files.map(f => ({
+        name: f.name,
+        url: f.url,
+        extension: f.extension
+    }));
+    
+    log.debug(`Found ${fileMatches.length} files`);
+    return { files: fileMatches };
+}
+
+export async function fetchSubtitleByUrl(
+    url: string,
+    fileName: string
+): Promise<{ text: string; fileName: string; extension: string }> {
+    const text = await fetchSubtitleFile({ name: fileName, url, extension: fileName.split('.').pop() || 'srt' });
+    const extension = fileName.split('.').pop() || 'srt';
+    return { text, fileName, extension };
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -396,16 +685,35 @@ let lastRequest = { title: "", timestamp: 0 };
 const DEBOUNCE_MS = 1000;
 
 async function handleMessage(msg: any, sender: any) {
+    if (msg.type === "CLEAR_CACHE") {
+        try {
+            await browser_ext.storage.local.remove("categoryCache");
+            log.info("Cache cleared");
+            return { success: true };
+        } catch (err) {
+            log.error("Failed to clear cache:", err);
+            return { success: false };
+        }
+    }
+    if (msg.type === "SEARCH_FOLDERS") {
+        return await searchFolders(msg.title, msg.category);
+    }
+    if (msg.type === "GET_FILES") {
+        return await getFilesInFolder(msg.category, msg.folder);
+    }
+    if (msg.type === "GET_SUBS_BY_URL") {
+        return await fetchSubtitleByUrl(msg.url, msg.fileName);
+    }
     if (msg.type === "LOG_DEBUG") {
         log.debug(msg.message);
-        return { text: "", fileName: null };
+        return { text: "", fileName: null, extension: null };
     }
-    if (msg.type !== "GET_SUBS") return { text: "", fileName: null };
+    if (msg.type !== "GET_SUBS") return { text: "", fileName: null, extension: null };
 
     const tabId = sender.tab?.id ?? 0;
 
     if (msg.title === lastRequest.title && Date.now() - lastRequest.timestamp < DEBOUNCE_MS) {
-        return { text: "", fileName: null };
+        return { text: "", fileName: null, extension: null };
     }
     lastRequest = { title: msg.title, timestamp: Date.now() };
 
@@ -415,9 +723,9 @@ async function handleMessage(msg: any, sender: any) {
     const context = { cancelled: false };
     activeSearches.set(tabId, context);
 
-    const result = await fetchSubtitle(msg.title, context);
+    const result = await fetchSubtitle(msg.title, context, msg.category);
 
-    if (context.cancelled) return { text: "", fileName: null };
+    if (context.cancelled) return { text: "", fileName: null, extension: null };
 
     activeSearches.delete(tabId);
     return result;
@@ -432,7 +740,7 @@ browser_ext.runtime.onMessage.addListener(
                 sendResponse(result);
             } catch (err) {
                 log.error("Message handler error:", err);
-                sendResponse({ text: "", fileName: null });
+                sendResponse({ text: "", fileName: null, extension: null });
             }
         })();
 

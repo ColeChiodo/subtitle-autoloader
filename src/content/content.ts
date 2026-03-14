@@ -3,7 +3,7 @@
 import { log, sanitizeFileName, parseVideoTitle } from './helpers';
 import { loadSettings, saveSettings } from './storage';
 import { createMenu, initSubtitles } from './overlay';
-import { parseSRTFile } from './parseSRT';
+import { parseSubtitleFile } from './parseSubtitle';
 
 const browser_ext = typeof browser !== "undefined" ? browser : chrome;
 
@@ -114,25 +114,41 @@ async function attachOverlay(
         async (queryObj) => {
             if (!menu) return log.error('Menu not found');
 
-            // Convert search query object into a string
-            let query = queryObj.animeTitle;
-            if (queryObj.season) query += ` - S${queryObj.season}E${queryObj.episodeNumber}`;
-            else if (queryObj.episodeNumber) query += ` - E${queryObj.episodeNumber}`;
-            if (queryObj.episodeTitle) query += ` - ${queryObj.episodeTitle}`;
+            let srtText: string;
+            let fileName: string | null;
+            let extension: string | null;
 
-            const result = await (browser_ext.runtime.sendMessage as (msg: any) => Promise<any>)({
-                type: "GET_SUBS",
-                title: query,
-            });
+            // Check if subtitles were already loaded via dropdown
+            if (queryObj.subtitleText) {
+                srtText = queryObj.subtitleText;
+                fileName = queryObj.subtitleFileName || null;
+                extension = queryObj.subtitleExtension || null;
+            } else {
+                // Convert search query object into a string
+                let query = queryObj.animeTitle;
+                if (queryObj.season) query += ` - S${queryObj.season}E${queryObj.episodeNumber}`;
+                else if (queryObj.episodeNumber) query += ` - E${queryObj.episodeNumber}`;
+                if (queryObj.episodeTitle) query += ` - ${queryObj.episodeTitle}`;
 
-            const { text: srtText, fileName } = result as { text: string; fileName: string | null };
+                const result = await (browser_ext.runtime.sendMessage as (msg: any) => Promise<any>)({
+                    type: "GET_SUBS",
+                    title: query,
+                    category: queryObj.category,
+                });
+
+                const res = result as { text: string; fileName: string | null; extension: string | null };
+                srtText = res.text;
+                fileName = res.fileName;
+                extension = res.extension;
+            }
+
             if (!srtText) {
                 const fileNameSpan = menu.querySelector('.fileName');
                 if (fileNameSpan) fileNameSpan.textContent = 'No subtitles found';
                 return log.error('No subtitles found');
             }
 
-            subtitles = parseSRTFile(srtText);
+            subtitles = parseSubtitleFile(srtText, fileName || `subtitles.${extension || 'srt'}`);
             const fileNameSpan = menu.querySelector('.fileName');
             if (fileNameSpan) fileNameSpan.textContent = `${sanitizeFileName(fileName || 'No subtitles found')}` || 'No subtitles found';
 

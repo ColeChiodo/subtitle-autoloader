@@ -2,6 +2,15 @@ const browser_ext = typeof browser !== "undefined" ? browser : chrome;
 
 let fileNameEl: HTMLDivElement | null = null;
 
+const SUBTITLE_CATEGORIES = [
+    { value: "", label: "All Categories" },
+    { value: "anime_tv", label: "TV Anime" },
+    { value: "anime_movie", label: "Movie Anime" },
+    { value: "drama_tv", label: "TV Drama" },
+    { value: "drama_movie", label: "Movie Drama" },
+    { value: "unsorted", label: "Unsorted" },
+];
+
 /**
  * Create subtitle overlay
  */
@@ -97,7 +106,7 @@ export function createMenu(
     parent: HTMLElement,
     defaults: { subs: boolean; offset: number; color: string; fontSize: number; search: { title?: string; season?: number; episode?: number; episodeTitle?: string; }; },
     toggleCallback: (subs: boolean, offset: number, color: string, fontSize: number) => void,
-    searchCallback: (searchquery: { animeTitle: string; season?: string; episodeNumber?: string; episodeTitle?: string; }) => void
+    searchCallback: (searchquery: { animeTitle: string; season?: string; episodeNumber?: string; episodeTitle?: string; category?: string; subtitleText?: string; subtitleFileName?: string; subtitleExtension?: string; }) => void
 ) {
     if (document.querySelector('.kuraji-menu-button')) return;
 
@@ -149,6 +158,7 @@ function createDropdown(
         season?: string;
         episodeNumber?: string;
         episodeTitle?: string;
+        category?: string;
     }) => void
 ): HTMLDivElement {
     const dropdown = document.createElement('div');
@@ -193,10 +203,13 @@ function createSearchForm(
         season?: string;
         episodeNumber?: string;
         episodeTitle?: string;
+        category?: string;
     }) => void
 ): HTMLFormElement {
     const form = document.createElement('form');
     Object.assign(form.style, { display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' });
+
+    const browser_ext = typeof browser !== "undefined" ? browser : chrome;
 
     const makeInput = (defaultValue: string, placeholder: string, name: string, required = false) => {
         const input = document.createElement('input');
@@ -217,34 +230,225 @@ function createSearchForm(
         return input;
     };
 
+    const makeSelect = (name: string) => {
+        const select = document.createElement('select');
+        select.name = name;
+        Object.assign(select.style, {
+            padding: '4px 6px',
+            borderRadius: '4px',
+            border: '1px solid #444',
+            background: '#111',
+            color: 'white',
+            fontSize: '13px'
+        });
+        ['keydown','keyup','keypress'].forEach(ev => select.addEventListener(ev, e => e.stopPropagation()));
+        return select;
+    };
+
+    const categorySelect = makeSelect('category');
+    SUBTITLE_CATEGORIES.forEach(cat => {
+        const option = document.createElement('option');
+        option.value = cat.value;
+        option.textContent = cat.label;
+        categorySelect.appendChild(option);
+    });
+
     const titleInput = makeInput(defaults.search.title || '', 'Anime title *', 'animeTitle', true);
     const seasonInput = makeInput(defaults.search.season?.toString() || '', 'Season (optional)', 'season');
     const episodeInput = makeInput(defaults.search.episode?.toString() || '', 'Episode number (optional)', 'episodeNumber');
     const epTitleInput = makeInput(defaults.search.episodeTitle || '', 'Episode title (optional)', 'episodeTitle');
 
     const searchBtn = document.createElement('button');
-    searchBtn.type = 'submit';
+    searchBtn.type = 'button';
     searchBtn.textContent = 'Search';
     Object.assign(searchBtn.style, {
         background: '#4caf50', color: 'white', border: 'none', borderRadius: '4px',
         padding: '6px 0', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginTop: '2px'
     });
 
-    form.append(titleInput, seasonInput, episodeInput, epTitleInput, searchBtn);
+    const folderSelect = makeSelect('folder');
+    folderSelect.style.display = 'none';
+    const folderOption = document.createElement('option');
+    folderOption.value = '';
+    folderOption.textContent = 'Select folder...';
+    folderSelect.appendChild(folderOption);
 
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
+    const fileSelect = makeSelect('file');
+    fileSelect.style.display = 'none';
+    const fileOption = document.createElement('option');
+    fileOption.value = '';
+    fileOption.textContent = 'Select file...';
+    fileSelect.appendChild(fileOption);
+
+    form.append(categorySelect, titleInput, seasonInput, episodeInput, epTitleInput, searchBtn);
+    form.append(folderSelect, fileSelect);
+
+    let selectedFolder: { folder: string; category: string } | null = null;
+    let selectedFile: { name: string; url: string; extension: string } | null = null;
+
+    searchBtn.addEventListener('click', async () => {
         const animeTitle = titleInput.value.trim();
-        if (fileNameEl) fileNameEl.textContent = 'Searching...';
+        if (fileNameEl) fileNameEl.textContent = 'Searching folders...';
         if (!animeTitle) { alert('Anime title is required.'); return; }
-        const searchquery = {
-            animeTitle,
-            season: seasonInput.value.trim(),
-            episodeNumber: episodeInput.value.trim(),
-            episodeTitle: epTitleInput.value.trim()
-        };
-        console.log('Search Query:', searchquery);
-        if (searchCallback) searchCallback(searchquery);
+
+        const category = categorySelect.value || undefined;
+
+        try {
+            const result = await (browser_ext.runtime.sendMessage as (msg: any) => Promise<any>)({
+                type: "SEARCH_FOLDERS",
+                title: animeTitle,
+                category: category,
+            });
+
+            const matches = result.matches || [];
+            
+            if (matches.length === 0) {
+                if (fileNameEl) fileNameEl.textContent = 'No folders found';
+                folderSelect.style.display = 'none';
+                fileSelect.style.display = 'none';
+                return;
+            }
+
+            folderSelect.innerHTML = '';
+            const defaultOpt = document.createElement('option');
+            defaultOpt.value = '';
+            defaultOpt.textContent = matches.length > 1 ? `Change folder (${matches.length} found)` : matches[0].folder;
+            folderSelect.appendChild(defaultOpt);
+
+            matches.forEach((match: { folder: string; category: string }) => {
+                const opt = document.createElement('option');
+                opt.value = JSON.stringify(match);
+                opt.textContent = `${match.folder} [${match.category}]`;
+                folderSelect.appendChild(opt);
+            });
+
+            folderSelect.style.display = 'block';
+            
+            // Auto-select first folder
+            selectedFolder = matches[0];
+            folderSelect.selectedIndex = 1;
+            
+            if (!selectedFolder) return;
+            
+            if (fileNameEl) fileNameEl.textContent = 'Loading files...';
+
+            // Load files for first folder
+            try {
+                const fileResult = await (browser_ext.runtime.sendMessage as (msg: any) => Promise<any>)({
+                    type: "GET_FILES",
+                    category: selectedFolder!.category,
+                    folder: selectedFolder!.folder,
+                });
+
+                const files = fileResult.files || [];
+                
+                fileSelect.innerHTML = '';
+                const fileDefaultOpt = document.createElement('option');
+                fileDefaultOpt.value = '';
+                fileDefaultOpt.textContent = files.length > 0 ? `Select file (${files.length} found)` : 'No files found';
+                fileSelect.appendChild(fileDefaultOpt);
+
+                files.forEach((file: { name: string; url: string; extension: string }) => {
+                    const opt = document.createElement('option');
+                    opt.value = JSON.stringify(file);
+                    opt.textContent = file.name;
+                    fileSelect.appendChild(opt);
+                });
+
+                fileSelect.style.display = 'block';
+                
+                if (fileNameEl) fileNameEl.textContent = files.length > 0 ? 'Select a subtitle file' : 'No subtitle files found';
+
+            } catch (fileErr) {
+                console.error('Get files error:', fileErr);
+                if (fileNameEl) fileNameEl.textContent = 'Error loading files';
+            }
+
+        } catch (err) {
+            console.error('Search error:', err);
+            if (fileNameEl) fileNameEl.textContent = 'Search error';
+        }
+    });
+
+    folderSelect.addEventListener('change', async () => {
+        const value = folderSelect.value;
+        if (!value) return;
+
+        selectedFolder = JSON.parse(value);
+        if (fileNameEl) fileNameEl.textContent = 'Loading files...';
+
+        try {
+            const result = await (browser_ext.runtime.sendMessage as (msg: any) => Promise<any>)({
+                type: "GET_FILES",
+                category: selectedFolder!.category,
+                folder: selectedFolder!.folder,
+            });
+
+            const files = result.files || [];
+            
+            fileSelect.innerHTML = '';
+            const defaultOpt = document.createElement('option');
+            defaultOpt.value = '';
+            defaultOpt.textContent = files.length > 0 ? `Select file (${files.length} found)` : 'No files found';
+            fileSelect.appendChild(defaultOpt);
+
+            files.forEach((file: { name: string; url: string; extension: string }) => {
+                const opt = document.createElement('option');
+                opt.value = JSON.stringify(file);
+                opt.textContent = file.name;
+                fileSelect.appendChild(opt);
+            });
+
+            fileSelect.style.display = 'block';
+            
+            if (fileNameEl) fileNameEl.textContent = files.length > 0 ? 'Select a subtitle file' : 'No subtitle files found';
+
+        } catch (err) {
+            console.error('Get files error:', err);
+            if (fileNameEl) fileNameEl.textContent = 'Error loading files';
+        }
+    });
+
+    fileSelect.addEventListener('change', async () => {
+        const value = fileSelect.value;
+        if (!value) {
+            selectedFile = null;
+            return;
+        }
+
+        selectedFile = JSON.parse(value);
+
+        if (!selectedFile || !selectedFolder) {
+            alert('Please select a folder first');
+            return;
+        }
+
+        if (fileNameEl) fileNameEl.textContent = 'Loading subtitles...';
+
+        try {
+            const result = await (browser_ext.runtime.sendMessage as (msg: any) => Promise<any>)({
+                type: "GET_SUBS_BY_URL",
+                url: selectedFile.url,
+                fileName: selectedFile.name,
+            });
+
+            const searchquery = {
+                animeTitle: titleInput.value.trim(),
+                season: seasonInput.value.trim(),
+                episodeNumber: episodeInput.value.trim(),
+                episodeTitle: epTitleInput.value.trim(),
+                category: categorySelect.value || undefined,
+                subtitleText: result.text,
+                subtitleFileName: result.fileName,
+                subtitleExtension: result.extension,
+            };
+
+            if (searchCallback) searchCallback(searchquery);
+
+        } catch (err) {
+            console.error('Load subtitles error:', err);
+            if (fileNameEl) fileNameEl.textContent = 'Error loading subtitles';
+        }
     });
 
     return form;

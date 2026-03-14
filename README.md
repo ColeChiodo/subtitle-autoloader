@@ -10,7 +10,7 @@
 
 ## How to use
 ### To use the extension. You must do the following:
-1. **Generate and Save a GitHub Token**
+1. **(Optional/Recommended) Generate and Save a GitHub Token**
    * [**Create a fine-grained personal access token on GitHub**](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token)
       * Ensure Public repository access
    * **Open Kuraji settings page**
@@ -35,21 +35,41 @@ I created Kuraji to automatically find and load Japanese subtitles, saving time 
 * Automatically detects the title, season, and episode of your anime.
 * Fetches subtitles from Japanese subtitle repository.
 * Matches the best subtitle using fuzzy search and episode metadata.
-* Supports `.srt` subtitle files for immediate playback.
+* Supports `.srt` and `.ass` subtitle files for immediate playback.
+* Category selection (TV Anime, Movie Anime, TV Drama, Movie Drama).
+* Interactive folder and file selection with auto-selection of best match.
+* Folder caching (3 hours) for faster repeated searches.
+
+## Recent Changes (v0.4.0)
+
+### New Features
+- **Category Selection**: Dropdown to select between TV Anime, Movie Anime, TV Drama, Movie Drama, or All Categories. This fixes the issue where searching for movies would incorrectly match TV episodes.
+- **Interactive Selection**: Anime and file dropdowns with auto-selection of best match. User can change selection if needed.
+- **ASS Support**: Added basic support for `.ass` subtitle files (Advanced Substation Alpha).
+- **Folder Caching**: Folder lists are cached for 3 hours to reduce API calls and improve search speed.
+- **Clear Cache Button**: Added button in settings to manually clear the folder cache.
+
+### How the New Search Works
+1. Enter anime title and optionally select a category (e.g., "Movie Anime")
+2. Click Search - folders are fetched from GitHub
+3. Best matching anime folder is auto-selected (user can change via dropdown)
+4. Files in the folder are loaded - select a subtitle file
+5. Subtitles load automatically upon file selection
+
+### Settings Page Updates
+- Added "Clear Folder Cache" button to force refresh folder listings
+- Cache automatically expires every 3 hours (matches GitHub repo update cycle)
 
 ## Supported Platforms
 
-* **Browser:** Firefox and Chrome
+* **Browser:** Firefox and Chrome Based
 * **Video Services:** Jellyfin, Youtube, Plex
    * **Basic iFrame Support**
 
 ## Future Plans
 ### What I want to implement to this extension in the future:
 * Expand website compatibility
-* Support other subtitle file extensions (`.ass`).
 * Fix iFrame site quirks (fullscreen, etc)
-* Add Japanese language support for live action tv shows/movies/dramas (requires sourcing of additional subtitle databases).
-   * Not High Priority, because sites that offer live action shows/movies already provide Japanese subtitles, for the most part.
 
 ### Site Support Wishlist
 * Netflix
