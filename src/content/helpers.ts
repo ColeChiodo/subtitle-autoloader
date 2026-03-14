@@ -49,25 +49,38 @@ export function parseVideoTitle(videoTitle: string): {
 } {
     log.debug(`Parsing video title: ${videoTitle}`);
 
-    // Match year in parentheses, e.g. (2021)
     const yearMatch = videoTitle.match(/\((\d{4})\)/);
     const year = yearMatch ? parseInt(yearMatch[1]) : undefined;
 
-    // Match S#E#, S# E#, S#:E#, or S# · E#
-    const seMatch = videoTitle.match(/S(\d+)[\s:·]*E(\d+)/i);
+    const seMatch = videoTitle.match(/S(\d+)[\s:·\-_]*E(\d+)/i);
     const season = seMatch ? parseInt(seMatch[1]) : undefined;
     const episode = seMatch ? parseInt(seMatch[2]) : undefined;
 
-    // Split on hyphens to extract main and episode title
-    const parts = videoTitle.split(" - ").map(p => p.trim()).filter(Boolean);
-    const mainTitle = parts[0]?.replace(/\(.*?\)/g, "").trim() || videoTitle.trim();
+    const epOnlyMatch = !episode ? videoTitle.match(/(?:episode|ep\.?)\s*(\d+)/i) : undefined;
+    const episodeFromEp = epOnlyMatch ? parseInt(epOnlyMatch[1]) : undefined;
 
+    let mainTitle = videoTitle;
     let episodeTitle: string | undefined;
-    if (seMatch && parts.length > 2) {
-        episodeTitle = parts.slice(2).join(" - ").replace(/\(.*?\)/g, "").trim();
-    } else if (parts.length > 1) {
-        episodeTitle = parts.slice(1).join(" - ").replace(/\(.*?\)/g, "").trim();
+
+    if (seMatch) {
+        const seIndex = videoTitle.indexOf(seMatch[0]);
+        if (seIndex > 0) {
+            mainTitle = videoTitle.substring(0, seIndex).trim();
+            const afterSe = videoTitle.substring(seIndex + seMatch[0].length).trim();
+            if (afterSe) {
+                episodeTitle = afterSe.replace(/\(.*?\)/g, "").trim();
+            }
+        }
+    } else if (epOnlyMatch) {
+        const epIndex = videoTitle.indexOf(epOnlyMatch[0]);
+        if (epIndex > 0) {
+            mainTitle = videoTitle.substring(0, epIndex).trim();
+        }
     }
 
-    return { title: mainTitle, season, episode, episodeTitle, year };
+    mainTitle = mainTitle.replace(/\(.*?\)/g, "").trim();
+
+    const finalEpisode = episode || episodeFromEp;
+
+    return { title: mainTitle, season, episode: finalEpisode, episodeTitle, year };
 }

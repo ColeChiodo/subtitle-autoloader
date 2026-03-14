@@ -255,7 +255,7 @@ function createSearchForm(
 
     const titleInput = makeInput(defaults.search.title || '', 'Anime title *', 'animeTitle', true);
     const seasonInput = makeInput(defaults.search.season?.toString() || '', 'Season (optional)', 'season');
-    const episodeInput = makeInput(defaults.search.episode?.toString() || '', 'Episode number (optional)', 'episodeNumber');
+    const episodeInput = makeInput(defaults.search.episode?.toString() || '', 'Episode # (optional)', 'episodeNumber');
     const epTitleInput = makeInput(defaults.search.episodeTitle || '', 'Episode title (optional)', 'episodeTitle');
 
     const searchBtn = document.createElement('button');
@@ -286,17 +286,65 @@ function createSearchForm(
     let selectedFolder: { folder: string; category: string } | null = null;
     let selectedFile: { name: string; url: string; extension: string } | null = null;
 
+    function filterFiles(files: { name: string; url: string; extension: string }[]): { name: string; url: string; extension: string }[] {
+        const season = seasonInput.value.trim();
+        const episode = episodeInput.value.trim();
+        const episodeTitle = epTitleInput.value.trim().toLowerCase();
+
+        if (!season && !episode && !episodeTitle) {
+            return files;
+        }
+
+        const filtered = files.filter(file => {
+            const fileName = file.name.toLowerCase();
+
+            if (episode) {
+                const epNum = episode.replace(/^0+/, '') || '0';
+                const epRegex = new RegExp(`(?:s\\d+[e_\\-.]?|s\\d+[_\\-. ]?|season[_\\- ]?\\d+[_\\- ]?e?|e)${epNum}(?:\\.|_|-|$|\\s)`, 'i');
+                if (!epRegex.test(fileName)) {
+                    return false;
+                }
+            }
+
+            if (season) {
+                const seasonNum = season.replace(/^0+/, '') || '0';
+                const seasonRegex = new RegExp(`s${seasonNum}e\\d+|2nd\\s+season.*-${seasonNum.padStart(2, '0')}|season[_\\- ]?${seasonNum}[_\\- ]|season[_\\- ]?${seasonNum}`, 'i');
+                if (episode && !seasonRegex.test(fileName)) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        return filtered.length > 0 ? filtered : files;
+    }
+
     searchBtn.addEventListener('click', async () => {
         const animeTitle = titleInput.value.trim();
+        const season = seasonInput.value.trim();
+        const episode = episodeInput.value.trim();
+        const episodeTitle = epTitleInput.value.trim();
+        
         if (fileNameEl) fileNameEl.textContent = 'Searching folders...';
         if (!animeTitle) { alert('Anime title is required.'); return; }
 
         const category = categorySelect.value || undefined;
 
+        let searchTitle = animeTitle;
+        if (season && episode) {
+            searchTitle += ` S${season}E${episode}`;
+        } else if (episode) {
+            searchTitle += ` E${episode}`;
+        }
+        if (episodeTitle) {
+            searchTitle += ` ${episodeTitle}`;
+        }
+
         try {
             const result = await (browser_ext.runtime.sendMessage as (msg: any) => Promise<any>)({
                 type: "SEARCH_FOLDERS",
-                title: animeTitle,
+                title: searchTitle,
                 category: category,
             });
 
@@ -340,7 +388,7 @@ function createSearchForm(
                     folder: selectedFolder!.folder,
                 });
 
-                const files = fileResult.files || [];
+                const files = filterFiles(fileResult.files || []);
                 
                 fileSelect.innerHTML = '';
                 const fileDefaultOpt = document.createElement('option');
@@ -384,7 +432,7 @@ function createSearchForm(
                 folder: selectedFolder!.folder,
             });
 
-            const files = result.files || [];
+            const files = filterFiles(result.files || []);
             
             fileSelect.innerHTML = '';
             const defaultOpt = document.createElement('option');
