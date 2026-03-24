@@ -50,7 +50,8 @@ async function attachOverlay(
     media: HTMLVideoElement | HTMLIFrameElement | HTMLElement,
     getTitle: () => string | null,
     getButtonsContainer: (media: HTMLVideoElement | HTMLIFrameElement | HTMLElement) => HTMLElement | null,
-    getSearchQuery?: (title: string | null) => any
+    getSearchQuery?: (title: string | null) => any,
+    getOverlayParent?: () => HTMLElement | null
 ) {
     cleanupOverlay();
 
@@ -60,7 +61,9 @@ async function attachOverlay(
     fontSize = settings.fontSize;
     subtitleColor = settings.color;
 
-    const overlay = initSubtitles(subsEnabled ? { subs: true } : { subs: false });
+    const overlayParent = getOverlayParent?.();
+
+    const overlay = initSubtitles(subsEnabled ? { subs: true, overlayParent } : { subs: false, overlayParent });
     if (!overlay) return log.error('Failed to create subtitle overlay');
 
     currentOverlay = overlay;
@@ -473,7 +476,8 @@ async function handleBiliBili() {
             log.warn('cannot get right controls')
             return null;
         },
-        (title) => parseVideoTitle(title || '')
+        (title) => parseVideoTitle(title || ''),
+        () => document.querySelector('#bilibiliPlayer')
     );
 }
 
