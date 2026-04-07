@@ -439,7 +439,7 @@ function watchYoutube() {
  * Handles video frame detection within BiliBili.
  */
 async function handleBiliBili() {
-    log.info('handleBiliBli')
+    log.info('handleBiliBili')
     const video  = document.querySelector('video')
 
     if (!video) return
@@ -484,7 +484,7 @@ async function handleBiliBili() {
 /**
  * Observe BiliBili navigation and re-run handler on URL change / player updates
  */
-function watachBiliBili() {
+function watchBiliBili() {
     if (watching) return;
     watching = true;
 
@@ -612,7 +612,7 @@ async function init() {
         watchYoutube();
     } else if (document.title.toLowerCase().includes('bilibili')) {
         log.info('Detected BiliBili');
-        watachBiliBili();
+        watchBiliBili();
     } else {
         for (let i = 0; i < 10; i++) {
             getIFrame();
