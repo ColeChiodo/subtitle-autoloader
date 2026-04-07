@@ -50,7 +50,8 @@ async function attachOverlay(
     media: HTMLVideoElement | HTMLIFrameElement | HTMLElement,
     getTitle: () => string | null,
     getButtonsContainer: (media: HTMLVideoElement | HTMLIFrameElement | HTMLElement) => HTMLElement | null,
-    getSearchQuery?: (title: string | null) => any
+    getSearchQuery?: (title: string | null) => any,
+    getOverlayParent?: () => HTMLElement | null
 ) {
     cleanupOverlay();
 
@@ -60,7 +61,9 @@ async function attachOverlay(
     fontSize = settings.fontSize;
     subtitleColor = settings.color;
 
-    const overlay = initSubtitles(subsEnabled ? { subs: true } : { subs: false });
+    const overlayParent = getOverlayParent?.();
+
+    const overlay = initSubtitles(subsEnabled ? { subs: true, overlayParent } : { subs: false, overlayParent });
     if (!overlay) return log.error('Failed to create subtitle overlay');
 
     currentOverlay = overlay;
@@ -433,6 +436,86 @@ function watchYoutube() {
 
 
 /**
+ * Handles video frame detection within BiliBili.
+ */
+async function handleBiliBili() {
+    log.info('handleBiliBili')
+    const video  = document.querySelector('video')
+
+    if (!video) return
+
+    await attachOverlay(video, 
+        () => {
+            const originalName = document.querySelector('.bstar-meta__origin-name-content')
+            if (originalName?.textContent) {
+                log.debug('got original name')
+                return originalName.textContent
+            }
+
+            return document.title.replace('- BiliBili', '') || ''
+        }, 
+        () => {
+            const existing = document.querySelector<HTMLElement>('.kuraji-buttons');
+            if (existing) return existing;
+
+            const rightControls = document.querySelector<HTMLElement>('.player-mobile-control-bar-right ');
+            if (rightControls) {
+                const container = document.createElement('div');
+                container.className = 'kuraji-buttons';
+                Object.assign(container.style, {
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    marginRight: '8px',
+                    pointerEvents: 'auto',
+                    zIndex: '9999999'
+                });
+                rightControls.insertBefore(container, rightControls.firstChild);
+                return container;
+            }
+            log.warn('cannot get right controls')
+            return null;
+        },
+        (title) => parseVideoTitle(title || ''),
+        () => document.querySelector('#bilibiliPlayer')
+    );
+}
+
+/**
+ * Observe BiliBili navigation and re-run handler on URL change / player updates
+ */
+function watchBiliBili() {
+    if (watching) return;
+    watching = true;
+
+    let lastUrl = location.href
+
+    const observer = new MutationObserver(() => {
+        const currentUrl = location.href;
+        if (currentUrl !== lastUrl) {
+            cleanupOverlay();
+            lastUrl = currentUrl;
+
+            setTimeout(() => {
+                handleBiliBili().catch(err => log.debug('handleBiliBili error', err));
+            }, 250);
+        } else {
+            // BiliBili might slow init video
+            const video = document.querySelector('video');
+            if (video && video !== currentVideo) {
+                cleanupOverlay();
+                handleBiliBili();
+            }
+        }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Also try an initial run
+    setTimeout(() => handleBiliBili().catch(err => log.debug('handleBiliBili error', err)), 200);
+}
+
+/**
  * Handles navigation within Hianime.
  * If navigating to an iframe, attach listener for video time messages.
  */
@@ -527,6 +610,9 @@ async function init() {
     } else if (document.title.toLowerCase().includes('youtube')) {
         log.info('Detected YouTube');
         watchYoutube();
+    } else if (document.title.toLowerCase().includes('bilibili')) {
+        log.info('Detected BiliBili');
+        watchBiliBili();
     } else {
         for (let i = 0; i < 10; i++) {
             getIFrame();

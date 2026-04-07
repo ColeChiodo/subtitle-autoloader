@@ -14,14 +14,14 @@ const SUBTITLE_CATEGORIES = [
 /**
  * Create subtitle overlay
  */
-export function initSubtitles(defaults: { subs: boolean; }) {
+export function initSubtitles(defaults: { subs: boolean; overlayParent?: HTMLElement | null; }) {
     if (document.querySelector('.kuraji-subtitles')) return null;
 
     const overlay = createOverlay();
     const span = createSubtitleSpan();
 
     overlay.appendChild(span);
-    document.body.appendChild(overlay);
+    (defaults.overlayParent || document).appendChild(overlay);
     overlay.style.display = defaults.subs ? 'flex' : 'none';
 
     return overlay;
