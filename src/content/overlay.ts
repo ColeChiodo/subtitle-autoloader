@@ -2,6 +2,21 @@ const browser_ext = typeof browser !== "undefined" ? browser : chrome;
 
 let fileNameEl: HTMLDivElement | null = null;
 
+const API_URL = 'https://o6xssbovz7.execute-api.us-west-1.amazonaws.com/dev/explain';
+
+let llmApiKey: string | null = null;
+
+async function checkLlmApiKey(): Promise<boolean> {
+    if (llmApiKey !== null) return !!llmApiKey;
+    try {
+        const stored = await browser_ext.storage.local.get('llmApiKey');
+        llmApiKey = stored.llmApiKey || null;
+    } catch {
+        llmApiKey = null;
+    }
+    return !!llmApiKey;
+}
+
 const SUBTITLE_CATEGORIES = [
     { value: "", label: "All Categories" },
     { value: "anime_tv", label: "TV Anime" },
@@ -46,8 +61,8 @@ function createOverlay(): HTMLDivElement {
 }
 
 function createSubtitleSpan(): HTMLSpanElement {
-    const span = document.createElement('span');
-    Object.assign(span.style, {
+    const container = document.createElement('span');
+    Object.assign(container.style, {
         position: 'absolute',
         background: 'rgba(0,0,0,0.5)',
         padding: '2px 6px',
@@ -57,18 +72,225 @@ function createSubtitleSpan(): HTMLSpanElement {
         cursor: 'move',
         pointerEvents: 'all',
         userSelect: 'none',
-        display: 'none' // hide initially
+        display: 'none'
     });
+
+    const textSpan = document.createElement('span');
+    textSpan.className = 'subtitle-text';
+    container.appendChild(textSpan);
+
+    let explainIcon: HTMLSpanElement | null = null;
 
     const observer = new MutationObserver(() => {
-        span.style.display = span.textContent && span.textContent.trim() !== '' ? 'inline-block' : 'none';
+        const text = textSpan.textContent || '';
+        const hasContent = text.trim() !== '';
+        container.style.display = hasContent ? 'inline-block' : 'none';
     });
 
-    observer.observe(span, { characterData: true, childList: true, subtree: true });
+    observer.observe(textSpan, { characterData: true, childList: true, subtree: true });
 
-    makeDraggable(span);
+    (async () => {
+        const hasApiKey = await checkLlmApiKey();
+        if (!hasApiKey) return;
 
-    return span;
+        explainIcon = document.createElement('span');
+        explainIcon.innerHTML = '&#9432;';
+        explainIcon.className = 'explain-icon';
+        Object.assign(explainIcon.style, {
+            display: 'inline-block',
+            marginLeft: '8px',
+            cursor: 'pointer',
+            opacity: '0',
+            transition: 'opacity 0.2s',
+            fontSize: '20px',
+            verticalAlign: 'middle',
+            pointerEvents: 'auto'
+        });
+        explainIcon.title = 'Explain grammar';
+        container.appendChild(explainIcon);
+
+        explainIcon.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const sentence = textSpan.textContent?.trim();
+            if (!sentence || !explainIcon) return;
+
+            const modal = createExplainModal();
+            document.body.appendChild(modal);
+            showLoading(modal);
+
+            try {
+                const { loadLlmApiKey } = await import('./storage');
+                const apiKey = await loadLlmApiKey();
+
+                if (!apiKey) {
+                    showError(modal, 'Please set your LLM API key in the extension settings.');
+                    return;
+                }
+
+                const res = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: apiKey, sentence }),
+                });
+
+                const raw = await res.text();
+                let data;
+                try {
+                    data = JSON.parse(raw);
+                } catch {
+                    const fixed = raw.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3');
+                    data = JSON.parse(fixed);
+                }
+
+                if (!res.ok) {
+                    showError(modal, data.body?.error || data.error || 'Request failed');
+                    return;
+                }
+
+                if (data.body?.body && typeof data.body.body === 'string') {
+                    data = JSON.parse(data.body.body);
+                } else if (data.body && typeof data.body === 'object') {
+                    data = data.body;
+                }
+
+                showResult(modal, data, sentence);
+            } catch (err: any) {
+                showError(modal, err.message);
+            }
+        });
+
+        container.addEventListener('mouseenter', () => {
+            const text = textSpan.textContent || '';
+            if (text.trim() && explainIcon) {
+                explainIcon.style.opacity = '1';
+            }
+        });
+
+        container.addEventListener('mouseleave', () => {
+            if (explainIcon) {
+                explainIcon.style.opacity = '0';
+            }
+        });
+    })();
+
+    makeDraggable(container);
+
+    return container;
+}
+
+function createExplainModal(): HTMLDivElement {
+    const modal = document.createElement('div');
+    Object.assign(modal.style, {
+        position: 'fixed',
+        top: '100px',
+        left: '100px',
+        width: '500px',
+        background: '#1e1e1e',
+        borderRadius: '12px',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+        zIndex: '9999999999',
+        fontFamily: 'Arial, sans-serif',
+        overflow: 'hidden'
+    });
+
+    const header = document.createElement('div');
+    Object.assign(header.style, {
+        background: '#2d2d2d',
+        color: '#e0e0e0',
+        padding: '12px 16px',
+        cursor: 'move',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+    });
+
+    const title = document.createElement('span');
+    title.textContent = 'Grammar Explanation';
+    title.style.fontWeight = 'bold';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '&times;';
+    Object.assign(closeBtn.style, {
+        background: 'none',
+        border: 'none',
+        fontSize: '20px',
+        cursor: 'pointer',
+        color: 'white'
+    });
+    closeBtn.addEventListener('click', () => modal.remove());
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    modal.appendChild(header);
+
+    const content = document.createElement('div');
+    Object.assign(content.style, {
+        padding: '16px',
+        maxHeight: '300px',
+        overflow: 'auto',
+        color: '#e0e0e0'
+    });
+    modal.appendChild(content);
+
+    let isDragging = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+
+    header.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        dragOffsetX = e.clientX - modal.offsetLeft;
+        dragOffsetY = e.clientY - modal.offsetTop;
+        e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        modal.style.left = `${e.clientX - dragOffsetX}px`;
+        modal.style.top = `${e.clientY - dragOffsetY}px`;
+    });
+
+    window.addEventListener('mouseup', () => {
+        isDragging = false;
+    });
+
+    return modal;
+}
+
+function showLoading(modal: HTMLDivElement) {
+    const content = modal.children[1] as HTMLElement;
+    content.innerHTML = '<p style="text-align:center;color:#666;">Loading explanation...</p>';
+}
+
+function showError(modal: HTMLDivElement, message: string) {
+    const content = modal.children[1] as HTMLElement;
+    content.innerHTML = `<p style="color:#c00;text-align:center;">${message}</p>`;
+}
+
+function showResult(modal: HTMLDivElement, data: any, sentence: string) {
+    const content = modal.children[1] as HTMLElement;
+
+    content.innerHTML = `
+        <style>
+            .explain-original { font-size: 18px; margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 6px; color: #fff; font-weight: 500; }
+            .explain-translation { font-size: 18px; margin-bottom: 16px; padding: 12px; background: #2d2d2d; border-radius: 6px; color: #b0b0b0; font-weight: 500; }
+            .explain-breakdown { list-style: none; padding: 0; margin: 0; }
+            .explain-breakdown li { padding: 8px 0; border-bottom: 1px solid #444; }
+            .explain-word { font-weight: 600; color: #fff; }
+            .explain-type { color: #888; font-size: 14px; }
+            .explain-meaning { color: #b0b0b0; font-size: 14px; margin-top: 4px; }
+        </style>
+        <div class="explain-original">${sentence}</div>
+        <div class="explain-translation">${data.translation || ''}</div>
+        <ul class="explain-breakdown">
+            ${(data.breakdown || []).map((b: any) => `
+                <li>
+                    <span class="explain-word">${b.word}</span>
+                    <span class="explain-type">(${b.type})</span>
+                    <div class="explain-meaning">${b.meaning}</div>
+                </li>
+            `).join('')}
+        </ul>
+    `;
 }
 
 function makeDraggable(span: HTMLElement) {

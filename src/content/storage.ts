@@ -31,3 +31,11 @@ export async function loadSettings(): Promise<SubtitleSettings> {
 	const stored = await browser_ext.storage.local.get('subtitleSettings');
 	return stored.subtitleSettings || defaultSettings;
 }
+
+/**
+ * Load LLM API key from browser storage
+ */
+export async function loadLlmApiKey(): Promise<string> {
+	const stored = await browser_ext.storage.local.get('llmApiKey');
+	return stored.llmApiKey || '';
+}

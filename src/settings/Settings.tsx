@@ -8,18 +8,26 @@ import browser from 'webextension-polyfill';
 function SettingsPage() {
 	const version = manifest.version;
 	const [token, setToken] = useState('');
+	const [llmApiKey, setLlmApiKey] = useState('');
 	const [status, setStatus] = useState('');
 
 	useEffect(() => {
 		(async () => {
-			const data = (await browser.storage.local.get('githubToken')) as { githubToken?: string };
+			const data = (await browser.storage.local.get(['githubToken', 'llmApiKey'])) as { githubToken?: string; llmApiKey?: string };
             if (data.githubToken) setToken(data.githubToken);
+			if (data.llmApiKey) setLlmApiKey(data.llmApiKey);
 		})();
 	}, []);
 
 	const saveToken = async () => {
 		await browser.storage.local.set({ githubToken: token.trim() });
 		setStatus('✅ Token saved!');
+		setTimeout(() => setStatus(''), 2000);
+	};
+
+	const saveLlmApiKey = async () => {
+		await browser.storage.local.set({ llmApiKey: llmApiKey.trim() });
+		setStatus('✅ LLM API key saved!');
 		setTimeout(() => setStatus(''), 2000);
 	};
 
@@ -50,6 +58,27 @@ function SettingsPage() {
 					className="mt-4 bg-[#fabd2f] text-[#282828] px-4 py-2 rounded hover:bg-[#d79921] font-semibold"
 				>
 					Save Token
+				</button>
+				{status && <p className="mt-2 text-[#b8bb26]">{status}</p>}
+			</div>
+
+			<div className="bg-[#3c3836] p-4 rounded-lg w-full max-w-md text-center mt-4">
+				<label htmlFor="llmApiKey" className="block mb-2 font-semibold">
+					LLM API Key (for grammar explanation)
+				</label>
+				<input
+					id="llmApiKey"
+					type="password"
+					value={llmApiKey}
+					onChange={(e) => setLlmApiKey(e.target.value)}
+					placeholder="Paste your LLM API key here"
+					className="w-full p-2 rounded bg-[#504945] text-[#ebdbb2] border border-[#665c54]"
+				/>
+				<button
+					onClick={saveLlmApiKey}
+					className="mt-4 bg-[#fabd2f] text-[#282828] px-4 py-2 rounded hover:bg-[#d79921] font-semibold"
+				>
+					Save LLM API Key
 				</button>
 				{status && <p className="mt-2 text-[#b8bb26]">{status}</p>}
 			</div>

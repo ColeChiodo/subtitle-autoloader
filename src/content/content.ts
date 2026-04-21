@@ -70,6 +70,7 @@ async function attachOverlay(
     currentVideo = media;
 
     const span = overlay.querySelector('span')!;
+    const textSpan = span.querySelector('.subtitle-text')!;
     span.style.color = subtitleColor;
     span.style.fontSize = `${fontSize}px`;
 
@@ -162,7 +163,7 @@ async function attachOverlay(
                     const currentTime = media.currentTime + (subtitleOffset / 1000);
                     const current = subtitles.find(s => currentTime >= s.start && currentTime <= s.end);
                     const text = current ? current.text : '';
-                    span.textContent = text;
+                    textSpan.textContent = text;
                     span.style.color = subtitleColor;
                     if (text !== lastSubtitle) lastSubtitle = text;
                 });
@@ -177,7 +178,7 @@ async function attachOverlay(
                         const currentTime = data.time + (subtitleOffset / 1000);
                         const current = subtitles.find(s => currentTime >= s.start && currentTime <= s.end);
                         const text = current ? current.text : '';
-                        span.textContent = text;
+                        textSpan.textContent = text;
                         span.style.color = subtitleColor;
                         if (text !== lastSubtitle) lastSubtitle = text;
                     } catch (err) { }
