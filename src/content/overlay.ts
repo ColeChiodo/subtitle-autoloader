@@ -21,7 +21,7 @@ export function initSubtitles(defaults: { subs: boolean; overlayParent?: HTMLEle
     const span = createSubtitleSpan();
 
     overlay.appendChild(span);
-    (defaults.overlayParent || document).appendChild(overlay);
+    (defaults.overlayParent || document.body).appendChild(overlay);
     overlay.style.display = defaults.subs ? 'flex' : 'none';
 
     return overlay;

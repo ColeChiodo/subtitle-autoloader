@@ -601,23 +601,31 @@ function getIFrame() {
  * Initialize - checks the current context (top page vs iframe)
  */
 async function init() {
-    if (document.title.toLowerCase().includes('jellyfin')) {
-        log.info('Detected Jellyfin web client');
-        watchJellyfin();
-    } else if (document.title.toLowerCase().includes('plex')) {
-        log.info('Detected Plex web client');
-        watchPlex();
-    } else if (document.title.toLowerCase().includes('youtube')) {
-        log.info('Detected YouTube');
-        watchYoutube();
-    } else if (document.title.toLowerCase().includes('bilibili')) {
-        log.info('Detected BiliBili');
-        watchBiliBili();
-    } else {
-        for (let i = 0; i < 10; i++) {
-            getIFrame();
-            await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+        log.info('Kuraji content script loaded');
+        log.debug('Document title:', document.title);
+
+        if (document.title.toLowerCase().includes('jellyfin')) {
+            log.info('Detected Jellyfin web client');
+            watchJellyfin();
+        } else if (document.title.toLowerCase().includes('plex')) {
+            log.info('Detected Plex web client');
+            watchPlex();
+        } else if (document.title.toLowerCase().includes('youtube')) {
+            log.info('Detected YouTube');
+            watchYoutube();
+        } else if (document.title.toLowerCase().includes('bilibili')) {
+            log.info('Detected BiliBili');
+            watchBiliBili();
+        } else {
+            log.debug('No known site detected, checking for iframes');
+            for (let i = 0; i < 10; i++) {
+                getIFrame();
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
         }
+    } catch (err) {
+        log.error('Init error:', err);
     }
 }
 
