@@ -177,4 +177,4 @@ You can either **use the prebuilt extension ZIPs** or **build it yourself from s
 [![Firefox](https://img.shields.io/badge/Firefox-Click%20to%20Install-orange?logo=firefox-browser&logoColor=white)](https://addons.mozilla.org/firefox/addon/kuraji)
 [![Chrome](https://img.shields.io/badge/Chrome-Click%20to%20Install-blue?logo=google-chrome&logoColor=white)](https://chromewebstore.google.com/detail/gbeolmhljhgoidkalfbkagobfhpgkfbf)
 
-**© 2025 [colechiodo.cc](https://colechiodo.cc) | MIT License**
+**© [colechiodo.cc](https://colechiodo.cc) | MIT License**
